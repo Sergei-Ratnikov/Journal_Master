@@ -221,7 +221,7 @@ def extract_coordinates_from_line(line):
         # Очищаем от лишних символов
         part = part.strip()
         # Проверяем, соответствует ли часть шаблону координаты
-        if config.regular_axis.match(part):
+        if config.regular_axis_full.match(part):
             coords.append(part)
     return coords
 
@@ -259,6 +259,19 @@ def extract_kks_from_line(line):
                 kks_list.append(match)
     
     return kks_list
+
+def extract_kks_from_list(list_of_strings):
+    '''
+    вспомогательная функция
+    поиск ККС в списке строк
+    return список ККС
+    '''
+    list_of_kks = []
+    if list_of_strings:
+        for st in list_of_strings:
+            if config.regular_KKS_any.search(st):
+                list_of_kks.append(config.regular_KKS_any.search(st).group().strip())
+    return list(set(list_of_kks))
 
 def parse_xyz_kks(int_list):
     """
@@ -392,12 +405,14 @@ def parse_kks_room_and_equip(list_of_KKS):
     KKS_equipment = ''
     if list_of_KKS:
         list_of_KKS = list(set(list_of_KKS))
+
         for kks in list_of_KKS:
             if config.regular_KKS_room.search(kks):
                 KKS_room = config.regular_KKS_room.search(kks).group().strip()
                 break
             elif config.regular_KKS_building.search(kks) and not KKS_room:
                 KKS_room = config.regular_KKS_building.search(kks).group().strip()
+
         for kks in list_of_KKS:
             if (    config.regular_KKS_equipment.search(kks) 
                 and config.regular_KKS_equipment.search(kks).group().strip() != KKS_room
@@ -888,16 +903,16 @@ def row_parser(input):
         if trace:
             array_row[8] = trace
 
-    # 9. Откуда помещение
-    # 10. Откуда оборудование
-    # 11. Откуда x
-    # 12. Откуда y
-    # 13. Откуда z
-    # 14. Куда помещение
-    # 15. Куда оборудование
-    # 16. Куда x
-    # 17. Куда y
-    # 18. Куда z
+# 9. Откуда помещение
+# 10. Откуда оборудование
+# 11. Откуда x
+# 12. Откуда y
+# 13. Откуда z
+# 14. Куда помещение
+# 15. Куда оборудование
+# 16. Куда x
+# 17. Куда y
+# 18. Куда z
 
     # Я беру весь список и ищу в нем три координаты подряд - это первая и вторая тройка
     # потом я ищу 2 ККС не подряд и еще 2 ККС не подряд не одинаковых
@@ -907,26 +922,185 @@ def row_parser(input):
     list_of_KKS_start =     []
     list_of_KKS_end =       []
 
-    int_list =              []  # intermediate list - собираю в общий промежуточный список 
-                                # всю информацию о начале и конце трассы из ячеек между группой и длиной
-    for cell in input[4:-2]:
-        if cell:
-            int_list.extend(cell)
 
-# ------------   ПОИСК КООРДИНАТ, РАСПОЛОЖЕННЫХ ПОДРЯД --------------
-                # в отдельных ячейках
+# ------------ ПАРСИНГ КООРДИНАТ и ККС - 1 ВАРИАНТ ----------------------
+    # если в строке имя журнала + 7 списков и в списке начало / конец может не быть ККС или координат
+# ['11UQC10R005', '10BFE29GH000', 'Комплектное распредустройство 0,4 кВ /', '4002107.8', '548533.4', '0.0'],       4
+# ['11UBN', '10BYA19', 'Стойка приборная автономная/', 'Instrumentation stand autonomous'],                        5
+    if len(input) == 8:
+        try:
+            for i in range (0, len(input[4]) - 1):
+                if (    (config.regular_axis_full.search(input[4][i])     or str(input[4][i])     == '-')
+                    and (config.regular_axis_full.search(input[4][i + 1]) or str(input[4][i + 1]) == '-')
+                    and (config.regular_axis_full.search(input[4][i + 2]) or str(input[4][i + 2]) == '-' or str(input[4][i + 2]) == '0')
+                ):
+                    list_of_axis_start = [  input[4][i],
+                                            input[4][i + 1],
+                                            input[4][i + 2]
+                                        ]
+                    break
+
+            for i in range (0, len(input[5]) - 1):
+                if (    (config.regular_axis_full.search(input[5][i])     or str(input[5][i])     == '-')
+                    and (config.regular_axis_full.search(input[5][i + 1]) or str(input[5][i + 1]) == '-')
+                    and (config.regular_axis_full.search(input[5][i + 2]) or str(input[5][i + 2]) == '-' or str(input[5][i + 2]) == '0')
+                ):
+                    list_of_axis_end = [ input[5][i],
+                                         input[5][i + 1],
+                                         input[5][i + 2]
+                                    ]
+                    break
+
+            list_of_KKS_start = extract_kks_from_list(input[4])
+            # for strng in input[4]:
+            #     if config.regular_KKS_any.search(strng):
+            #         list_of_KKS_start.append(config.regular_KKS_any.search(strng).group().strip())
+            # list_of_KKS_start = list(set(list_of_KKS_start))
+
+            list_of_KKS_end = extract_kks_from_list(input[5])
+            # for strng in input[5]:
+            #     if config.regular_KKS_any.search(strng):
+            #         list_of_KKS_end.append(config.regular_KKS_any.search(strng).group().strip())
+            # list_of_KKS_end = list(set(list_of_KKS_end))
+
+        except Exception as e:
+            print(f"row_parser Ошибка парсинга 1 ВАРИАНТ {array_row[1]} - {e}")
 
 
-    if len(input) > 13:
+# ------------ ПАРСИНГ КООРДИНАТ и ККС - 2 ВАРИАНТ ----------------------
+#   если в строке имя журнала + 9 списков и в списке 
+#   начало 3, в конце 1 без координат /или/ начало 1 без координат , в конце 3
 
-    # 11. Откуда x
-    # 12. Откуда y
-    # 13. Откуда z
-    # просматриваю список сначала и беру первые три подряд кординаты - это начало
-        start_last_index = 0
+    # ['03UGF10R002', '00CMS12', 'Шкаф / Cabinet', 'Шкаф', '/', 'Cabinet', '4001294.5'],        4  начало
+    # ['03UGF10R002', '00CMS12', 'Шкаф / Cabinet', 'Шкаф', '/', 'Cabinet', '549083.0'],         5  начало
+    # ['03UGF10R002', '00CMS12', 'Шкаф / Cabinet', 'Шкаф', '/', 'Cabinet', '+1.500'],           6  начало
+    # ['07UBG', '00CKY01', 'Комплект специального оборудования/', 'Special equipment set'],     7  конец
+# или
+    # ['07UBG', '00CKY01', 'Комплект специального оборудования/', 'Special equipment set'],     4  начало
+    # ['03UGF10R002', '00CMS12', 'Шкаф / Cabinet', 'Шкаф', '/', 'Cabinet', '4001294.5'],        5  конец
+    # ['03UGF10R002', '00CMS12', 'Шкаф / Cabinet', 'Шкаф', '/', 'Cabinet', '549083.0'],         6  конец
+    # ['03UGF10R002', '00CMS12', 'Шкаф / Cabinet', 'Шкаф', '/', 'Cabinet', '+1.500'],           7  конец
+    elif len(input) == 10:
+        try:
 
-        for i in range (0, len(int_list)):
-            try:
+            if(     (config.regular_axis_full.search(input[4][-1]) or input[4][-1] == '-')
+                and (config.regular_axis_full.search(input[5][-1]) or input[5][-1] == '-')
+                and (config.regular_axis_full.search(input[6][-1]) or input[6][-1] == '-')
+            ):
+                list_of_axis_start = [  input[4][-1],
+                                        input[5][-1],
+                                        input[6][-1]]
+
+                list_of_KKS_start = extract_kks_from_list(input[4][:-1] + input[5][:-1] + input[6][:-1])
+                # list_of_KKS_start = re.findall(config.regular_KKS_any, 
+                #                                (' '.join(input[4][:-1]) + ' ' + 
+                #                                 ' '.join(input[5][:-1]) + ' ' +
+                #                                 ' '.join(input[6][:-1])))
+                list_of_KKS_end = extract_kks_from_list(input[7])
+                # list_of_KKS_end = re.findall(config.regular_KKS_any, ' '.join(input[7]))
+
+            elif(       (config.regular_axis_full.search(input[5][-1]) or input[5][-1] == '-')
+                    and (config.regular_axis_full.search(input[6][-1]) or input[6][-1] == '-')
+                    and (config.regular_axis_full.search(input[7][-1]) or input[7][-1] == '-')
+            ):
+                list_of_axis_end = [input[5][-1],
+                                    input[6][-1],
+                                    input[7][-1]]
+                
+                # list_of_KKS_start = re.findall(config.regular_KKS_any, ' '.join(input[4]))
+                list_of_KKS_start = extract_kks_from_list(input[4])
+                list_of_KKS_end = extract_kks_from_list(input[5][:-1] + input[6][:-1] + input[7][:-1])
+        #         list_of_KKS_end = re.findall(config.regular_KKS_any, 
+        #                         (   ' '.join(input[5][:-1]) + ' ' + 
+        #                             ' '.join(input[6][:-1]) + ' ' +
+        #                             ' '.join(input[7][:-1])))
+        # except Exception as e:
+            print(f"row_parser Ошибка парсинга 2 ВАРИАНТ {array_row[1]} - {e}")
+
+
+# ------------ ПАРСИНГ КООРДИНАТ и ККС - 3 ВАРИАНТ ----------------------
+# ['00UAC10R005', '40ARA00GH001', 'Шкаф ПА блока 3', '4002107.8'],  4 начало
+# ['40ARA00GH001', 'Шкаф ПА блока 3', '548533.4'],                  5
+# ['40ARA00GH001', 'Шкаф ПА блока 3',  '0.0'],                      6
+# ['03UGF10R002', '4001294.5'],                                     7 конец
+# ['00CMS12', 'Шкаф / Cabinet', '549083.0'],                        8
+# ['00CMS12', 'Шкаф / Cabinet',  '+1.500'],                         9
+    elif len(input) == 12:
+        try:
+            if(     (config.regular_axis_full.search(input[4][-1]) or input[4][-1] == '-')
+                and (config.regular_axis_full.search(input[5][-1]) or input[5][-1] == '-')
+                and (config.regular_axis_full.search(input[6][-1]) or input[6][-1] == '-')
+            ):
+                list_of_axis_start = [  input[4][-1],
+                                        input[5][-1],
+                                        input[6][-1]]
+
+                list_of_KKS_start = extract_kks_from_list(input[4][:-1] + input[5][:-1] + input[6][:-1])
+                # list_of_KKS_start = re.findall(config.regular_KKS_any, 
+                #                                (' '.join(input[4][:-1]) + ' ' + 
+                #                                 ' '.join(input[5][:-1]) + ' ' +
+                #                                 ' '.join(input[6][:-1])))
+                
+            if(     (config.regular_axis_full.search(input[7][-1]) or input[7][-1] == '-')
+                and (config.regular_axis_full.search(input[8][-1]) or input[8][-1] == '-')
+                and (config.regular_axis_full.search(input[9][-1]) or input[9][-1] == '-')
+            ):
+                list_of_axis_end = [input[7][-1],
+                                    input[8][-1],
+                                    input[9][-1]]
+
+                list_of_KKS_end = extract_kks_from_list(input[7][:-1] + input[8][:-1] + input[9][:-1])
+                # list_of_KKS_end = re.findall(config.regular_KKS_any, 
+                #                 (   ' '.join(input[7][:-1]) + ' ' + 
+                #                     ' '.join(input[8][:-1]) + ' ' +
+                #                     ' '.join(input[9][:-1])))
+
+
+                # -------------   есть вариант, когда координата в начале строки -------------------------
+
+            if(     (config.regular_axis_full.search(input[4][0]) or input[4][0] == '-')
+                and (config.regular_axis_full.search(input[5][0]) or input[5][0] == '-')
+                and (config.regular_axis_full.search(input[6][0]) or input[6][0] == '-')
+            ):
+                list_of_axis_start = [  input[4][0],
+                                        input[5][0],
+                                        input[6][0]]
+
+                list_of_KKS_start = extract_kks_from_list(input[4][1:] + input[5][1:] + input[6][1:])
+
+            if(     (config.regular_axis_full.search(input[7][0]) or input[7][0] == '-')
+                and (config.regular_axis_full.search(input[8][0]) or input[8][0] == '-')
+                and (config.regular_axis_full.search(input[9][0]) or input[9][0] == '-')
+            ):
+                list_of_axis_end = [input[7][0],
+                                    input[8][0],
+                                    input[9][0]]
+
+                list_of_KKS_end = extract_kks_from_list(input[7][1:] + input[8][1:] + input[9][1:])
+
+        except Exception as e:
+            print(f"row_parser Ошибка парсинга 3 ВАРИАНТ {array_row[1]} - {e}")
+
+
+# ------------ ПАРСИНГ КООРДИНАТ и ККС - 4 ВАРИАНТ ----------------------
+                # координаты расположены подряд в отдельных ячейках
+    elif len(input) > 12:
+
+# собираю в общий промежуточный список всю информацию о начале и конце трассы из ячеек между группой и длиной
+        int_list = []  # intermediate list - 
+        for cell in input[4:-2]:
+            if cell:
+                int_list.extend(cell)
+
+        start_last_index = -1
+        as_f = -1
+        as_l = -1
+        ae_f = -1
+        ae_l = -1
+
+        try:
+# просматриваю список сначала и беру первые три подряд кординаты - это начало
+            for i in range (0, len(int_list)):
                 if (
                         (config.regular_axis_full.search(int_list[i])     or int_list[i]     == '-')
                     and (config.regular_axis_full.search(int_list[i + 1]) or int_list[i + 1] == '-')
@@ -937,18 +1111,11 @@ def row_parser(input):
                                             int_list[i + 2]
                                             ]
                     start_last_index = i + 2
+                    as_f, as_l = find_first_and_last_sublist_index(int_list, list_of_axis_start)  # axis start_first, axis_start last
                     break
-            except Exception as e:
-                continue
-                print(f"row_parser list_of_axis_start ----- Ошибка координат кабеля {array_row[1]}")
 
-    # 16. Куда x
-    # 17. Куда y
-    # 18. Куда z
-
-    # просматриваю список с конца и беру первые три подряд координаты - это конец   
-        for i in range(len(int_list) - 1, -1, -1):
-            try:
+# просматриваю список с конца и беру первые три подряд координаты - это конец   
+            for i in range(len(int_list) - 1, -1, -1):
                 if (
                         (config.regular_axis_full.search(int_list[i])     or int_list[i]     == '-')
                     and (config.regular_axis_full.search(int_list[i - 1]) or int_list[i - 1] == '-')
@@ -960,28 +1127,22 @@ def row_parser(input):
                                         int_list[i - 1],
                                         int_list[i]
                                         ]
+                    ae_f, ae_l = find_first_and_last_sublist_index(int_list, list_of_axis_end)  # axis end_first, axis end_last
                     break
-            except Exception as e:
-                continue
-                print(f"row_parser index_axis_end ----- Ошибка координат кабеля {array_row[1]}")
+        except Exception as e:
+            print(f"row_parser Ошибка парсинга 4 ВАРИАНТ (поиск координат) {array_row[1]} - {e}")
 
-
-        if len(list_of_axis_start) == 3:
-            as_f, as_l = find_first_and_last_sublist_index(int_list, list_of_axis_start)        # axis start_first, axis_start last
-
-        if len(list_of_axis_end) == 3:
-            ae_f, ae_l = find_first_and_last_sublist_index(int_list, list_of_axis_end)        # axis end_first, axis end_last
-
-        # ----ищу KKS - 1 вариант
-        # ---- порядок считывания: XYZ начала ---> ККС начала ---> XYZ конца ---> ККС конца
+# ----ищу KKS - 1 комбинация
+# ---- порядок считывания: XYZ начала ---> ККС начала ---> XYZ конца ---> ККС конца
         if (
                 len(list_of_axis_start) > 0
             and len(list_of_axis_end) > 0
             and as_f == 0
             and ae_f > 3
         ):
-            # 1.1. ищу ККС конца между первой и последней координатой
+
             try:
+# 1.1. ищу ККС начала между первой и последней координатой                
                 for i in range (3, ae_f):
                     kks = ''
                     if config.regular_KKS_any.search(int_list[i]):
@@ -990,11 +1151,7 @@ def row_parser(input):
                             list_of_KKS_start.append(kks)
                             if len(list_of_KKS_start) == 3:
                                 break
-            except Exception as e:
-                print(f"row_parser Ошибка парсинга KKS 1.1 {array_row[1]} - {e}")
-
-            # 1.2. ищу ККС конца между индексом последней координаты конца и концом массива
-            try:
+# 1.2. ищу ККС конца между индексом последней координаты конца и концом массива
                 for i in range (ae_l, len(int_list)):
                     kks = ''
                     if config.regular_KKS_any.search(int_list[i]):
@@ -1004,18 +1161,18 @@ def row_parser(input):
                             if len(list_of_KKS_end) == 3:
                                 break
             except Exception as e:
-                print(f"row_parser Ошибка парсинга KKS 1.2 {array_row[1]} - {e}")
+                print(f"row_parser Ошибка парсинга 4 ВАРИАНТ (поиск ККС 1 комбинация) {array_row[1]} - {e}")
 
-        # ----- ищу KKS - 2 вариант
-        # ----- порядок считывания: ККС начала ---> XYZ начала ---> ККС конца ---> XYZ конца
+# ----- ищу KKS - 2 комбинация
+# ----- порядок считывания: ККС начала ---> XYZ начала ---> ККС конца ---> XYZ конца
         if (
             len(list_of_axis_start) > 0
             and len(list_of_axis_end) > 0
             and as_f > 2
             and as_l < ae_f
         ):
-            # 2.1. ищу ККС начала между 0 и индексом первой координаты
             try:
+# 2.1. ищу ККС начала между 0 и индексом первой координаты
                 for i in range (0, as_f): 
                     kks = ''          
                     if config.regular_KKS_any.search(int_list[i]):
@@ -1024,11 +1181,7 @@ def row_parser(input):
                             list_of_KKS_start.append(kks)
                             if len(list_of_KKS_start) == 3:
                                 break
-            except Exception as e:
-                print(f"row_parser Ошибка парсинга KKS 2.1 {array_row[1]} - {e}")
-
-            # 2.2. ищу ККС конца между координатами начала и координатами конца
-            try:
+# 2.2. ищу ККС конца между координатами начала и координатами конца
                 for i in range (as_l, ae_f):
                     kks = ''
                     if config.regular_KKS_any.search(int_list[i]):
@@ -1038,307 +1191,7 @@ def row_parser(input):
                             if len(list_of_KKS_end) == 3:
                                 break
             except Exception as e:
-                print(f"row_parser Ошибка парсинга KKS 2.2 {array_row[1]} - {e}")
-
-
-        # print(f'row_parser list_of_KKS_start ------ {list_of_KKS_start}')
-        # print(f'row_parser list_of_KKS_end ------ {list_of_KKS_end}')
-
-        # # 9. Откуда помещение
-        # # 10. Откуда оборудование
-        if list_of_KKS_start:
-            rs, es = parse_kks_room_and_equip(list_of_KKS_start)
-            if rs:
-                array_row[9] = str(rs)
-            if es:
-                array_row[10] = str(es)
-
-        # 14. Куда помещение
-        # 15. Куда оборудование
-        if list_of_KKS_end:
-            rr, ee = parse_kks_room_and_equip(list_of_KKS_end)
-            if rr:
-                array_row[14] = str(rr)
-            if ee:            
-                array_row[15] = str(ee)
-
-# ------------  если не сработало  --------------
-# ------------   ПОИСК КООРДИНАТ и ККС, РАСПОЛОЖЕННЫХ в одной строке
-                # если в строке имя журнала + 7 списков и в списке начало / конец может не быть ККС или координат
-
-                # ['11UQC10R005', '10BFE29GH000', 'Комплектное распредустройство 0,4 кВ /', '0.4 kV Switchgear Cabinet'],       4
-                # ['11UBN', '10BYA19', 'Стойка приборная автономная/', 'Instrumentation stand autonomous'],                     5
-
-    
-    elif (    
-        not list_of_axis_start
-        and not list_of_axis_end
-        and not list_of_KKS_start
-        and not list_of_KKS_end
-        and len(input) == 8
-    ):
-        try:
-            for i in range (0, len(input[4] - 1)):
-                if (
-                        (config.regular_axis_full.search(input[4][i])     or str(input[4][i]     == '-'))
-                    and (config.regular_axis_full.search(input[4][i + 1]) or input[4][i + 1] == '-')
-                    and (config.regular_axis_full.search(input[4][i + 2]) or input[4][i + 2] == '-')
-                ):
-                    list_of_axis_start = [  input[4][i],
-                                            input[4][i + 1],
-                                            input[4][i + 2]
-                                            ]
-                    break
-            print(f'list of axis - {list_of_axis_start}')    
-            # list_of_axis_start = re.findall(config.regular_axis_full, ' '.join(input[4]))
-            list_of_KKS_start =  re.findall(config.regular_KKS_any, ' '.join(input[4]))
-
-            rs, es = parse_kks_room_and_equip(list_of_KKS_start)
-            if rs:
-                array_row[9] = str(rs)
-            if es:
-                array_row[10] = str(es)
-
-            list_of_axis_end = re.findall(config.regular_axis, ' '.join(input[5]))
-            list_of_KKS_end = re.findall(config.regular_KKS_any, ' '.join(input[5]))
-
-            rr, ee = parse_kks_room_and_equip(list_of_KKS_end)
-            if rr:
-                array_row[14] = str(rr)
-            if ee:
-                array_row[15] = str(ee)
-
-
-        except Exception as e:
-            print(f"row_parser Ошибка парсинга с несовпадающими строками данных {array_row[1]} - {e}")
-
-
-
-
-
-
-    # # ------------  если не сработало  --------------
-    # # ------------   ПОИСК КООРДИНАТ, РАСПОЛОЖЕННЫХ вразбивку  --------------
-    # #                с совпадающими строками данных
-
-    #             # ['10UKC30R004', '10CMM09', '1615.2'],         4
-    #             # ['10UKC30R004', '10CMM09', '1789.8'],         5
-    #             # ['10UKC30R004', '10CMM09', '31.3'],           6
-
-    #             # ['10UKC04R002', '10KLE41AA402', '1600.9'],    7
-    #             # ['10UKC04R002', '10KLE41AA402', '1800.3'],    8
-    #             # ['10UKC04R002', '10KLE41AA402', '10.1'],      9
-    
-    # if ( not list_of_axis_start
-    #     and not list_of_axis_end
-    #     and not list_of_KKS_start
-    #     and not list_of_KKS_end
-    #     and len(input) > 9
-    # ):
-    #     try:
-    #         if( input[4][:-1] == input[5][:-1]
-    #             and input[4][:-1] == input[6][:-1]
-    #             and config.regular_axis.search(input[4][-1])
-    #             and config.regular_axis.search(input[5][-1])
-    #             and config.regular_axis.search(input[6][-1])
-    #         ):
-    #             list_of_axis_start = [  input[4][-1],
-    #                                     input[5][-1],
-    #                                     input[6][-1]]
-    #             if len(list_of_axis_start) == 3:
-    #                 array_row[11] = list_of_axis_start[0]
-    #                 array_row[12] = list_of_axis_start[1]
-    #                 array_row[13] = list_of_axis_start[2]
-
-    #             list_of_KKS_start = re.findall(config.regular_KKS_any, ' '.join(input[4][:-1]))
-    #             if list_of_KKS_start:
-    #                 rs, es = parse_kks_room_and_equip(list_of_KKS_start)
-    #                 if rs:
-    #                     array_row[9] = str(rs)
-    #                 if es:
-    #                     array_row[10] = str(es)
-
-    #         if(     input[7][:-1] == input[8][:-1]
-    #             and input[7][:-1] == input[9][:-1]
-    #             and config.regular_axis.search(input[7][-1])
-    #             and config.regular_axis.search(input[8][-1])
-    #             and config.regular_axis.search(input[9][-1])
-    #         ):
-    #             list_of_axis_end = [input[7][-1],
-    #                                 input[8][-1],
-    #                                 input[9][-1]]
-    #             if len(list_of_axis_end) == 3:
-    #                 array_row[16] = list_of_axis_end[0]
-    #                 array_row[17] = list_of_axis_end[1]
-    #                 array_row[18] = list_of_axis_end[2]
-
-    #             list_of_KKS_end = re.findall(config.regular_KKS_any, ' '.join(input[7][:-1]))
-    #             rr, ee = parse_kks_room_and_equip(list_of_KKS_end)
-    #             if rr:
-    #                 array_row[14] = str(rr)
-    #             if ee:
-    #                 array_row[15] = str(ee)
-
-    #     except Exception as e:
-    #         print(f"row_parser Ошибка парсинга с совпадающими строками данных {array_row[1]} - {e}")
-
-
-
-
-
-
-
-
-
-    # ------------  если не сработало  --------------
-    # ------------   ПОИСК КООРДИНАТ, РАСПОЛОЖЕННЫХ вразбивку  --------------
-    #                с несовпадающими строками данных
-                    # начало
-                # ['00UAC10R005', '40ARA00GH001', 'Шкаф ПА блока 3', '4002107.8'],  4
-                # ['40ARA00GH001', 'Шкаф ПА блока 3', '548533.4'],                  5
-                # ['40ARA00GH001', 'Шкаф ПА блока 3',  '0.0'],                      6
-
-                # ['03UGF10R002', '4001294.5'],                                     7
-                # ['00CMS12', 'Шкаф / Cabinet', '549083.0'],                        8
-                # ['00CMS12', 'Шкаф / Cabinet',  '+1.500'],                         9
-                    # конец аналогично
-    
-    if ( not list_of_axis_start
-        and not list_of_axis_end
-        and not list_of_KKS_start
-        and not list_of_KKS_end
-        and len(input) > 9
-    ):
-        try:
-            if(     (config.regular_axis_full.search(input[4][-1]) or input[4][-1] == '-')
-                and (config.regular_axis_full.search(input[5][-1]) or input[5][-1] == '-')
-                and (config.regular_axis_full.search(input[6][-1]) or input[6][-1] == '-')
-            ):
-                list_of_axis_start = [  input[4][-1],
-                                        input[5][-1],
-                                        input[6][-1]]
-
-
-                list_of_KKS_start = re.findall(config.regular_KKS_any, 
-                                               (' '.join(input[4][:-1]) + ' ' + 
-                                                ' '.join(input[5][:-1]) + ' ' +
-                                                ' '.join(input[6][:-1])))
-                
-                rs, es = parse_kks_room_and_equip(list_of_KKS_start)
-                if rs:
-                    array_row[9] = str(rs)
-                if es:
-                    array_row[10] = str(es)
-
-            if(     (config.regular_axis_full.search(input[7][-1]) or input[7][-1] == '-')
-                and (config.regular_axis_full.search(input[8][-1]) or input[8][-1] == '-')
-                and (config.regular_axis_full.search(input[9][-1]) or input[9][-1] == '-')
-            ):
-                list_of_axis_end = [input[7][-1],
-                                    input[8][-1],
-                                    input[9][-1]]
-
-
-                list_of_KKS_end = re.findall(config.regular_KKS_any, 
-                                (   ' '.join(input[7][:-1]) + ' ' + 
-                                    ' '.join(input[8][:-1]) + ' ' +
-                                    ' '.join(input[9][:-1])))
-
-                rr, ee = parse_kks_room_and_equip(list_of_KKS_end)
-                if rr:
-                    array_row[14] = str(rr)
-                if ee:
-                    array_row[15] = str(ee)
-
-        except Exception as e:
-            print(f"row_parser Ошибка парсинга с несовпадающими строками данных {array_row[1]} - {e}")
-
-
-
-
-
-
-    # ------------  если не сработало  --------------
-    # ------------   ПОИСК КООРДИНАТ и ККС,
-            #   если в строке имя журнала + 9 списков и в списке 
-            #   начало 3, в конце 1 без координат /или/ начало 1 без координат , в конце 3
-
-                # ['03UGF10R002', '00CMS12', 'Шкаф / Cabinet', 'Шкаф', '/', 'Cabinet', '4001294.5'],        4
-                # ['03UGF10R002', '00CMS12', 'Шкаф / Cabinet', 'Шкаф', '/', 'Cabinet', '549083.0'],         5
-                # ['03UGF10R002', '00CMS12', 'Шкаф / Cabinet', 'Шкаф', '/', 'Cabinet', '+1.500'],           6
-                # ['07UBG', '00CKY01', 'Комплект специального оборудования/', 'Special equipment set'],     7
-
-                # или
-
-                # ['07UBG', '00CKY01', 'Комплект специального оборудования/', 'Special equipment set'],     4
-                # ['03UGF10R002', '00CMS12', 'Шкаф / Cabinet', 'Шкаф', '/', 'Cabinet', '4001294.5'],        5
-                # ['03UGF10R002', '00CMS12', 'Шкаф / Cabinet', 'Шкаф', '/', 'Cabinet', '549083.0'],         6
-                # ['03UGF10R002', '00CMS12', 'Шкаф / Cabinet', 'Шкаф', '/', 'Cabinet', '+1.500'],           7
-
-    if ( not list_of_axis_start
-        and not list_of_axis_end
-        and not list_of_KKS_start
-        and not list_of_KKS_end
-        and len(input) == 10
-    ):
-        try:
-
-            if(     (config.regular_axis_full.search(input[4][-1]) or input[4][-1] == '-')
-                and (config.regular_axis_full.search(input[5][-1]) or input[5][-1] == '-')
-                and (config.regular_axis_full.search(input[6][-1]) or input[6][-1] == '-')
-            ):
-                list_of_axis_start = [  input[4][-1],
-                                        input[5][-1],
-                                        input[6][-1]]
-
-                list_of_KKS_start = re.findall(config.regular_KKS_any, 
-                                               (' '.join(input[4][:-1]) + ' ' + 
-                                                ' '.join(input[5][:-1]) + ' ' +
-                                                ' '.join(input[6][:-1])))
-                
-                rs, es = parse_kks_room_and_equip(list_of_KKS_start)
-                if rs:
-                    array_row[9] = str(rs)
-                if es:
-                    array_row[10] = str(es)
-
-                
-                list_of_KKS_end = re.findall(config.regular_KKS_any, ' '.join(input[7]))
-                rr, ee = parse_kks_room_and_equip(list_of_KKS_end)
-                if rr:
-                    array_row[14] = str(rr)
-                if ee:
-                    array_row[15] = str(ee)
-
-            if(     (config.regular_axis_full.search(input[5][-1]) or input[5][-1] == '-')
-                and (config.regular_axis_full.search(input[6][-1]) or input[6][-1] == '-')
-                and (config.regular_axis_full.search(input[7][-1]) or input[7][-1] == '-')
-            ):
-                list_of_axis_end = [input[5][-1],
-                                    input[6][-1],
-                                    input[7][-1]]
-
-                list_of_KKS_end = re.findall(config.regular_KKS_any, 
-                                (   ' '.join(input[5][:-1]) + ' ' + 
-                                    ' '.join(input[6][:-1]) + ' ' +
-                                    ' '.join(input[7][:-1])))
-
-                rr, ee = parse_kks_room_and_equip(list_of_KKS_end)
-                if rr:
-                    array_row[14] = str(rr)
-                if ee:
-                    array_row[15] = str(ee)
-
-
-                list_of_KKS_start = re.findall(config.regular_KKS_any, ' '.join(input[4]))
-                rs, es = parse_kks_room_and_equip(list_of_KKS_start)
-                if rs:
-                    array_row[9] = str(rs)
-                if es:
-                    array_row[10] = str(es)
-
-        except Exception as e:
-            print(f"row_parser Ошибка парсинга с несовпадающими строками данных {array_row[1]} - {e}")
+                print(f"row_parser Ошибка парсинга 4 ВАРИАНТ (поиск ККС 2 комбинация) {array_row[1]} - {e}")
 
 # ВЫВОД ДАННЫХ 
 
@@ -1346,11 +1199,23 @@ def row_parser(input):
         array_row[11] = list_of_axis_start[0].replace('+', '').strip()
         array_row[12] = list_of_axis_start[1].replace('+', '').strip()
         array_row[13] = list_of_axis_start[2].replace('+', '').strip()
-
+    
     if len(list_of_axis_end) == 3:
         array_row[16] = list_of_axis_end[0].replace('+', '').strip()
         array_row[17] = list_of_axis_end[1].replace('+', '').strip()
         array_row[18] = list_of_axis_end[2].replace('+', '').strip()
+
+    # if array_row[1] == '7.0001':
+    #     print(f'row_parser list_of_KKS_start ------ {list_of_KKS_start}')
+    rs, es = parse_kks_room_and_equip(list_of_KKS_start)
+    array_row[9] = str(rs)
+    array_row[10] = str(es)
+
+    # if array_row[1] == '7.0001':
+    #     print(f'row_parser list_of_KKS_end ------ {list_of_KKS_end}')
+    rr, ee = parse_kks_room_and_equip(list_of_KKS_end)
+    array_row[14] = str(rr)
+    array_row[15] = str(ee)
 
 # -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     # 19. Резервирование

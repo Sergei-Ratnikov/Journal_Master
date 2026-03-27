@@ -52,9 +52,14 @@ regular_KKS = re.compile("\\d{2,3}[А-ЯA-Z]{2,3}\\d{2,3}")                    #
 regular_KKS_any = re.compile(r'(?=.*[A-Z])(?=.*\d)[A-Z\d\s.-]{5,}')   # ККС оборудования или помещения
 
 # test
+# часть строки
 regular_KKS_room = re.compile(r'\d{2}[A-Z]{3}\d{1,3}R\d{1,3}')  # ККС помещения
 regular_KKS_building = re.compile(r'\d{2}[A-Z]{3}')  # ККС здания
 regular_KKS_equipment = re.compile(r'(?=.*[A-Z])(?=.*\d)(?!.*-.*-)(?!.*\s.*\s)[A-Z\d\s.-]{5,}') # ККС оборудования
+# вся строка
+regular_KKS_room_full = re.compile(r'^\d{2}[A-Z]{3}\d{1,3}R\d{1,3}$')  # ККС помещения
+regular_KKS_building_full = re.compile(r'^\d{2}[A-Z]{3}$')  # ККС здания
+regular_KKS_equipment_full = re.compile(r'^(?=.*[A-Z])(?=.*\d)(?!.*-.*-)(?!.*\s.*\s)[A-Z\d\s.-]{5,}$') # ККС оборудования
 
 regular_axis_full = re.compile(r'^[+-]?\d{1,8}\.?,?\d{0,4}\.?$')   # координата целиком
 regular_axis = re.compile(r'[+-]?\d{1,8}\.?,?\d{0,4}\.?')   # координата как часть текста
