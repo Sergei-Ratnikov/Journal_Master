@@ -42,8 +42,7 @@ def make_hashable(item):
 
 def is_subset_with_lists(list1, list2):
     """
-    вспомогательная функция
-
+    вспомогательная функция is_subset_with_lists(list1, list2)
     Проверяет, является ли list1 подмножеством list2, где элементы могут быть списками
     list1 = [[1, 2], 3, [4, [5, 6]]]
     list2 = [[1, 2], 3, 4, [4, [5, 6]], [7, 8]]
@@ -432,20 +431,21 @@ def extract_all_text_from_cell(cell):
     """
     result = []
     # Текст из параграфов в ячейке
-    for para in cell.paragraphs:
-        if para.text.strip():
-            text = para.text.strip()
-            text = ' '.join(text.split())
-            text = text.replace('\xad', '-').replace('\n', ' ')
-            result.append(text)
-    
-    # Текст из вложенных таблиц построчно вносится в result
-    for inner_table in cell.tables: # перебор всех вложенных в ячейку таблиц
-        # result.append('Вложенная таблица')
-        for it_row in inner_table.rows:
-            for nested_cell in it_row.cells:
-                inner_table_result = extract_all_text_from_cell(nested_cell)  # РЕКУРСИЯ для обработки вложенных таблиц
-                result.extend(inner_table_result)
+    if cell:
+        for para in cell.paragraphs:
+            if para.text.strip():
+                text = para.text.strip()
+                text = ' '.join(text.split())
+                text = text.replace('\xad', '-').replace('\n', ' ')
+                result.append(text)
+        
+        # Текст из вложенных таблиц построчно вносится в result
+        for inner_table in cell.tables: # перебор всех вложенных в ячейку таблиц
+            # result.append('Вложенная таблица')
+            for it_row in inner_table.rows:
+                for nested_cell in it_row.cells:
+                    inner_table_result = extract_all_text_from_cell(nested_cell)  # РЕКУРСИЯ для обработки вложенных таблиц
+                    result.extend(inner_table_result)
     return result
 
 def extract_all_text_from_table(table):
@@ -482,18 +482,24 @@ def extract_all_text_from_table(table):
     
     table_contents = []
     try:
+        row_index = 0
         for row in table.rows:              # перебор строк в таблице
             current_row = []
             for cell in row.cells:
                 current_row.append(extract_all_text_from_cell(cell))
+
             if len(current_row) > 6 and not all_deep_empty(current_row):
                 current_row = remove_duplicate_pairs(current_row)
                 table_contents.append(current_row)
+
+                # if current_row[0][0] == '8.0001':
+                #     for cell in row.cells:
+                #         print(f'row {row_index} - {extract_all_text_from_cell(cell)}')
+
+            row_index += 1
+
     except Exception as e:
         print(f'Ошибка! extract_all_text_from_table (0) -  {e}')
-
-            # print(f'extract_all_text_from_table 0 ------ current_row -------- {str(current_row)}')
-    # print(f'extract_all_text_from_table 0 ------ table_contents -------- {len(table_contents)}')
 
     if not table_contents:
         return []
@@ -518,8 +524,6 @@ def extract_all_text_from_table(table):
 
     # Удаление шапки и примечаний
 # 2
-
-
 # 3
 # Удаление строк таблицы, не содержащих в первой ячейке номер
 # TODO проверить на избыточную строгость - удаляются строки без нумерации в некоторых журналах
@@ -554,6 +558,68 @@ def extract_all_text_from_table(table):
         print(f'Ошибка! extract_all_text_from_table (4) -  {e}')
 
 
+
+# 6
+    # заплатка ошибки, которая расщепляет одну строку на несколько. Я нахожу все строки с одним номером в 0 столбце и 
+    # склеиваю их в 1 общую строку по принциу:
+    # если значения совпадают, то игнор, если нет, то склейка
+    # и затем удаляю расщепленные строки, заменяя одной объединенной
+    new_table_contents = []
+
+    cable_numbers = [] # список оригинальных номеров кабелей
+    try:
+        for i_row in range (0, len(table_contents)):
+            if table_contents[i_row][0] not in cable_numbers:
+                cable_numbers.append(table_contents[i_row][0])
+# здесь я собрал список номеров кабелей, которые есть в table_contents
+
+        for cable_number in cable_numbers:
+# Я беру каждый номер кабеля
+            list_of_rows_with_current_number = []  
+# создаю список индексов строк из table_contents, содержащих расщепленную запись о кабеле
+            for j, rowrow in enumerate(table_contents):
+                if rowrow[0] == cable_number:
+                    list_of_rows_with_current_number.append(j)
+# и добавляю в него все индексы строк из table_contents с информацией о кабеле
+
+
+            # if cable_number[0] == '8.0001':
+            #     for j in list_of_rows_with_current_number:
+            #         print(f'j len = {len(table_contents[j])}')
+
+
+            current_row = []    # создаю новую строку, которую буду наполнять информацией о текущем кабеле cable_number
+            i = list_of_rows_with_current_number[0]
+# i - первый индекс расщепленной строки для данного кабеля в table_contents
+            current_row = table_contents[i]
+# первую из строк просто беру всю
+            if len(list_of_rows_with_current_number) > 1:
+# если строка расщеплена, т.е. есть больше одной строки с этим номером кабеля
+                for i in range (1, len(list_of_rows_with_current_number)):
+                    r = list_of_rows_with_current_number[i] # индекс строки, содержащая расщепленную запись о кабеле в table_contents
+                    for i_cell in range (0, len(current_row) - 1): # индекс ячейки в строке
+                        if not is_subset_with_lists(table_contents[r][i_cell], current_row[i_cell]):
+                            current_row[i_cell].extend(table_contents[r][i_cell])
+
+            new_table_contents.append(current_row)
+# записываю новую строку
+        table_contents = new_table_contents
+    except Exception as e:
+        print(f'Ошибка! extract_all_text_from_table 6 -  {e}')
+
+# 7
+# удаляю повторяющиеся ячейки из строки
+    new_table_contents = []
+    try:
+        for row in table_contents:
+            rowrow = remove_duplicates(row)
+            new_table_contents.append(rowrow)
+        table_contents = new_table_contents          
+    except Exception as e:
+        print(f'Ошибка! extract_all_text_from_table 7 -  {e}')
+
+
+
 # 5
 # обработка записи координат, указанных в одной ячейке через символ табуляции или пробел: 
 # '1783.3 \t1780.2 \t1.0'
@@ -566,56 +632,23 @@ def extract_all_text_from_table(table):
                 # заменяю на        ['00UKS10R088', '00BYF49', '1783.3', '1780.2', '1.0']
                 if table_contents[i_row][j_col]:
                     # parts = re.split(r'\s*\t\s*', table_contents[i_row][j_col][-1].strip()) # пробую разделить последнюю строку на слова
-                    parts = table_contents[i_row][j_col][-1].strip().split()
+                    last_string = table_contents[i_row][j_col][-1]
+                    parts = last_string.strip().split()
                     # Проверяем, что получилось ровно три части
-                    if len(parts) == 3:
-                        # Проверяем каждую часть на соответствие регулярному выражению
-                        if all(regular_axis_local.fullmatch(p) for p in parts):
-                            del table_contents[i_row][j_col][-1]
-                        table_contents[i_row][j_col].extend(parts)
+                    # if len(parts) == 3:
+                    #     # Проверяем каждую часть на соответствие регулярному выражению
+                    #     if all(regular_axis_local.fullmatch(p) for p in parts):
+                    #         del table_contents[i_row][j_col][-1]        
+                    #     table_contents[i_row][j_col].extend(parts)
+
+                    if len(parts) == 3 and all(regular_axis_local.fullmatch(p) for p in parts):
+                        table_contents[i_row][j_col][:-1].extend(parts)
         # print(f'extract_all_text_from_table 5 ------ table_contents -------- {len(table_contents)}')
 
     except Exception as e:
         print(f'Ошибка! extract_all_text_from_table 5 -  {e}')
-# 6
-    new_table_contents = []
-    # получаю список оригинальных номеров кабелей
-    cable_numbers = []
-    try:
-        for i_row in range (0, len(table_contents)):
-            if table_contents[i_row][0] not in cable_numbers:
-                cable_numbers.append(table_contents[i_row][0])
 
-        for cable_number in cable_numbers:
-            list_of_rows_with_current_number = []  # список строк, содержащих расщепленную запись о кабеле
-            for i, rowrow in enumerate(table_contents):
-                if rowrow[0] == cable_number:
-                    list_of_rows_with_current_number.append(i)
 
-            current_row = []    # создаю новую строку, которую буду наполнять информацией о кабеле
-            i = list_of_rows_with_current_number[0] 
-            current_row = table_contents[i] # первую из расщепленных строк просто беру всю
-            if len(list_of_rows_with_current_number) > 1:
-                for i in range (1, len(list_of_rows_with_current_number)):
-                    r = list_of_rows_with_current_number[i] # строка, содержащая расщепленную запись о кабеле
-                    for cell in range (0, len(current_row)): # номер ячейки в строке
-                        if not is_subset_with_lists(table_contents[r][cell], current_row[cell]):
-                            current_row[cell].extend(table_contents[r][cell])
-            new_table_contents.append(current_row)
-        table_contents = new_table_contents
-    except Exception as e:
-        print(f'Ошибка! extract_all_text_from_table 6 -  {e}')
-
-# 7
-    new_table_contents = []
-    try:
-        for row in table_contents:
-            rowrow = remove_duplicates(row)
-            # print(rowrow)
-            new_table_contents.append(rowrow)
-        table_contents = new_table_contents          
-    except Exception as e:
-        print(f'Ошибка! extract_all_text_from_table 7 -  {e}')
 
     return table_contents
 
@@ -1353,10 +1386,10 @@ def base_master(dir_journals, dir_in):
     #     move_file (dir_journals + '/' + journal + '.docx', dir_in + '/void_fields')
 
 # Укажите полный путь к файлу
-    file_path = dir_in + '\\' + 'log.txt'  # для Windows
-# Открываем файл для записи и сохраняем текст
+#     file_path = dir_in + '\\' + 'log.txt'  # для Windows
+# # Открываем файл для записи и сохраняем текст
 
-    with open(file_path, 'w', encoding='utf-8') as file:
-        file.write(log)
+#     with open(file_path, 'w', encoding='utf-8') as file:
+#         file.write(log)
 
-    print(f"Файл сохранён: {file_path}")
+#     print(f"Файл сохранён: {file_path}")
