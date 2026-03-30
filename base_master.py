@@ -450,19 +450,17 @@ def extract_all_text_from_cell(cell):
 
 def extract_all_text_from_table(table):
     """
-    Извлекает ВЕСЬ текст из таблицы, возвращает массив строк таблицы - ячеек - строк содержимого
-
-    1. если в таблице все столбцы слева или справа пустые, то их удаляем
-    2. если в таблице в строке первый список имеет более 1 элемента - строку удаляем
-    3. если в таблице в строке первый список не содержит регулярное выражение regular_num - строку удаляем. а если содержит, 
+    0. Извлекает ВЕСЬ текст из таблицы, возвращает массив строк таблицы - ячеек - строк содержимого
+    1. если в строке столбец слева или справа пустой, то их удаляем
+    2. TODO проверка на резервируемость если в таблице в строке первый список имеет более 1 элемента
+    3. если в таблице в строке первая ячейка не содержит регулярное выражение regular_num - строку удаляем. а если содержит, 
         то оставляем только ту часть, которая соответствует регулярному выражению
     4. заплатка ошибки повторения строк из-за вложенной таблицы в столбце 2 (группа раскладки) -  если две строки совпадают 
         во всем кроме группы, то нижняя удаляется
-    5. заплатка ошибки координат, указанных в одной ячейке через символ табуляции: '1783.3 \t1780.2 \t1.0' - 
+    5. обработка записи координат, указанных в одной ячейке через символ табуляции: '1783.3 \t1780.2 \t1.0' - 
         такую запись нужно разбить и одну ячейку заменить тремя
         ищу строку типа   ['00UKS10R088', '00BYF49', 'Шкаф УСО / RTU cabinet', '1783.3 \t1780.2 \t1.0']
         заменяю на        ['00UKS10R088', '00BYF49', 'Шкаф УСО / RTU cabinet', '1783.3', '1780.2', '1.0']
-        ИЗМЕНЕНО: то же самое, но не табуляция, а пробел
 
     6. заплатка ошибки, которая расщепляет одну строку на несколько. Я нахожу все строки с одним номером в 0 столбце и 
         склеиваю их в 1 общую строку по принциу:
@@ -478,12 +476,11 @@ def extract_all_text_from_table(table):
             список текстовых строк
     """
 # 0
-    table_contents = []
-
     if not table.rows:
         print("Таблица пуста")
         return
-    # print(f'extract_all_text_from_table  table.rows {len(table.rows)}')
+    
+    table_contents = []
     try:
         for row in table.rows:              # перебор строк в таблице
             current_row = []
@@ -493,56 +490,10 @@ def extract_all_text_from_table(table):
                 current_row = remove_duplicate_pairs(current_row)
                 table_contents.append(current_row)
     except Exception as e:
-        print(f'Ошибка! extract_all_text_from_table 0 -  {e}')
+        print(f'Ошибка! extract_all_text_from_table (0) -  {e}')
 
             # print(f'extract_all_text_from_table 0 ------ current_row -------- {str(current_row)}')
     # print(f'extract_all_text_from_table 0 ------ table_contents -------- {len(table_contents)}')
-
-# 1
-    # 1.1 удаление пустого столбца справа и или слева     
-    # try:
-    #     left_has_entry = False
-    #     right_has_entry = False
-
-    #     for row in table_contents:
-    #         if not row[0]:
-    #             left_has_entry += False
-    #         else:
-    #             left_has_entry += True
-    #         if not row[-1]:
-    #             right_has_entry += False
-    #         else:
-    #             right_has_entry += True
-
-    #     if not left_has_entry or not right_has_entry:
-    #         new_table_contents = []
-    #         for row in table_contents:
-    #             if not left_has_entry:
-    #                 del row[0]
-    #             if not right_has_entry:
-    #                 del row[-1]
-    #             new_table_contents.append(row)
-    #         table_contents = new_table_contents
-    #         new_table_contents = []
-
-    #         # print(f'extract_all_text_from_table 1 ------ table_contents -------- {len(table_contents)}')
-    #         # for index, row in enumerate(table_contents):
-    #         #     print(f'{index} - {row[0]}')
-    # except Exception as e:
-    #     print(f'Ошибка! extract_all_text_from_table 1.1 -  {e}')
-
-    # 1.2 отдельное удаление пустой ячейки слева - исправление проблемы с журналами, в которых есть таблица с частью пустого левого столбца
-    # try:
-    #     new_table_contents = []
-    #     for row in table_contents:
-    #         if len(row) > 1 and not row[0]:
-    #             new_table_contents.append(row[1:])
-    #         else:
-    #             new_table_contents.append(row)
-    #     table_contents = new_table_contents
-    #     new_table_contents = []
-    # except Exception as e:
-    #     print(f'Ошибка! extract_all_text_from_table 1.2 -  {e}')
 
     if not table_contents:
         return []
@@ -551,7 +502,7 @@ def extract_all_text_from_table(table):
     try:
         for row in table_contents:
             current_row = row
-# 1.1 проверка пустоты левого столбца
+# 1 проверка пустоты левого столбца
             if all_deep_empty(row[0]) and config.regular_num.search(' '.join(row[1])):
                 current_row = row[1:]
 #     если правый столбец пустой, а следующий содержит буквы или минус (столбец с трассой) или тоже пустой (столбец с пустой трассой)
@@ -563,28 +514,35 @@ def extract_all_text_from_table(table):
         table_contents = new_table_contents
         new_table_contents = []
     except Exception as e:
-        print(f'Ошибка! extract_all_text_from_table 1.2 -  {e}')
+        print(f'Ошибка! extract_all_text_from_table (1) -  {e}')
 
     # Удаление шапки и примечаний
 # 2
+
+
 # 3
+# Удаление строк таблицы, не содержащих в первой ячейке номер
+# TODO проверить на избыточную строгость - удаляются строки без нумерации в некоторых журналах
     try:
         list_for_delete = [] # список строк для удаления
-        for index, row in enumerate(table_contents):
+        # составляю список строк таблицы для удаления
 
+        for index, row in enumerate(table_contents):
             match = config.regular_num.search(row[0][0])
             if match:
                 table_contents[index][0] = [match.group()]
+                # в этом месте я потерял информацию о резервировании!
             else:
                 list_for_delete.append(index)
         new_table_contents = [item for idx, item in enumerate(table_contents) if idx not in list_for_delete] # новый список из неудаляемых строк
         table_contents = new_table_contents
-        # print(f'extract_all_text_from_table ШАПКА ------ table_contents -------- {len(table_contents)}')
+    
     except Exception as e:
-        print(f'Ошибка! extract_all_text_from_table 2, 3 -  {e}')
-
+        print(f'Ошибка! extract_all_text_from_table (3) -  {e}')
 
 # 4
+# заплатка ошибки повторения строк из-за вложенной таблицы в столбце 2 (группа раскладки) -  
+# если две строки совпадают во всем кроме группы, то нижняя удаляется
     try:
         list_for_delete = [] # список строк для удаления
         for i in range (0, len(table_contents) - 1):
@@ -592,23 +550,23 @@ def extract_all_text_from_table(table):
                 list_for_delete.append(i + 1)
         new_table_contents = [item for idx, item in enumerate(table_contents) if idx not in list_for_delete] # новый список из неудаляемых строк
         table_contents = new_table_contents
-        # print(f'extract_all_text_from_table 4 ------ table_contents -------- {len(table_contents)}')
     except Exception as e:
-        print(f'Ошибка! extract_all_text_from_table 4 -  {e}')
+        print(f'Ошибка! extract_all_text_from_table (4) -  {e}')
 
 
 # 5
+# обработка записи координат, указанных в одной ячейке через символ табуляции или пробел: 
+# '1783.3 \t1780.2 \t1.0'
+# такую запись нужно разбить и одну ячейку заменить тремя
     try:
         regular_axis_local = re.compile(r'[+-]?\d{1,8}\.?,?\d{0,3}')
         for i_row in range (0, len(table_contents)):
             for j_col in range (3, len(table_contents[i_row]) - 1): # table_contents[i_row][j_col] - список строк в ячейке
-                # ищу строку типа   ['00UKS10R088', '00BYF49', 'Шкаф УСО / RTU cabinet', '1783.3 \t1780.2 \t1.0']
-                # заменяю на        ['00UKS10R088', '00BYF49', 'Шкаф УСО / RTU cabinet', '1783.3', '1780.2', '1.0']
+                # ищу строку типа   ['00UKS10R088', '00BYF49', '1783.3 \t1780.2 \t1.0']
+                # заменяю на        ['00UKS10R088', '00BYF49', '1783.3', '1780.2', '1.0']
                 if table_contents[i_row][j_col]:
-                    
                     # parts = re.split(r'\s*\t\s*', table_contents[i_row][j_col][-1].strip()) # пробую разделить последнюю строку на слова
                     parts = table_contents[i_row][j_col][-1].strip().split()
-                
                     # Проверяем, что получилось ровно три части
                     if len(parts) == 3:
                         # Проверяем каждую часть на соответствие регулярному выражению
@@ -695,62 +653,6 @@ def extract_all_text_from_docx(docx):
 
     
     return table_contents # возвращаю содержимое всех таблиц файла, список строк, каждая строка - список ячеек, каждая ячейка - список текстовых строк
-
-# старая версия
-def extract_all_text_from_dir(journals_directory):
-    """
-    Извлекает ВЕСЬ текст из всех документов doc и docx в папке
-    преобразует doc в docx функцией convert_doc_to_docx
-    возвращает массив строк таблицы - ячеек - строк содержимого
-
-    Args:
-        journals_directory - строка с адресом папки
-
-    Returns:
-        dir_contents = [    [строка таблицы 1: имя журнала, [ячейка 1]   [ячейка 2]    [ячейка 3] ] , 
-                            [строка таблицы 2: имя журнала, [ячейка 1]   [ячейка 2]    [ячейка 3] ]
-                        ]
-    """
-
-    dir_contents = []
-
-    source_dir = Path(journals_directory).resolve()  # resolve - Получение абсолютного пути к папке
-    # Собираю все doc и docx файлы в папке
-    docx_files = list(source_dir.glob('*.docx'))    # список из объектов Path, отвечающих условию пути source_dir и названию *.docx
-    doc_files = list(source_dir.glob('*.doc'))      # список из объектов Path, отвечающих условию пути source_dir и названию *.doc
-
-    docx_files_names = []
-    # временный список имен файлов .docx в папке для фильтрации
-    # в общий список должны попасть все .docx и только те .doc у которых нет такого же файла docx (уже ранее созданного) чтобы избежать задвоения 
-    for docx_file in docx_files:
-        docx_files_names.append(docx_file.stem)  # имя файла Path без разширения
-
-    files = docx_files # общий список docx файлов и уникальных doc файлов
-    for doc_file in doc_files:
-        if doc_file.stem not in docx_files_names:
-            files.append(doc_file)
-
-    print(f"Найдено журналов: {len(files)}")
-
-    for ii, file_path in enumerate(files):
-        print(f"Обрабатывается {ii + 1}: {file_path.name}")
-        # Дальнейшая работа с файлом...
-        # Для .doc нужно сначала конвертировать в .docx (как обсуждали ранее)
-        if file_path.suffix == '.doc':
-            docx_path = convert_doc_to_docx(str(file_path))  # Конвертация в .docx
-            docX = Document(docx_path)
-        else:
-            docX = Document(file_path)
-        table_contents = extract_all_text_from_docx(docX) # содержимое текущего файла 
-        if len(table_contents) > 0:
-            for i in range (0, len(table_contents)):
-                row = []    # создаю текущую строку для записи данных
-                row.append(file_path.stem) # 0 позиция в строке - имя файла Path без рарширения
-                for cell in table_contents[i]:
-                    row.append(cell) #  добавление всех данных из текущей строки содержимого текущего файла
-                dir_contents.append(row)
-        docX = None
-    return dir_contents
 
 def take_all_docx_from_dir(journals_directory):
     """
@@ -952,16 +854,7 @@ def row_parser(input):
                     break
 
             list_of_KKS_start = extract_kks_from_list(input[4])
-            # for strng in input[4]:
-            #     if config.regular_KKS_any.search(strng):
-            #         list_of_KKS_start.append(config.regular_KKS_any.search(strng).group().strip())
-            # list_of_KKS_start = list(set(list_of_KKS_start))
-
             list_of_KKS_end = extract_kks_from_list(input[5])
-            # for strng in input[5]:
-            #     if config.regular_KKS_any.search(strng):
-            #         list_of_KKS_end.append(config.regular_KKS_any.search(strng).group().strip())
-            # list_of_KKS_end = list(set(list_of_KKS_end))
 
         except Exception as e:
             print(f"row_parser Ошибка парсинга 1 ВАРИАНТ {array_row[1]} - {e}")
@@ -992,12 +885,7 @@ def row_parser(input):
                                         input[6][-1]]
 
                 list_of_KKS_start = extract_kks_from_list(input[4][:-1] + input[5][:-1] + input[6][:-1])
-                # list_of_KKS_start = re.findall(config.regular_KKS_any, 
-                #                                (' '.join(input[4][:-1]) + ' ' + 
-                #                                 ' '.join(input[5][:-1]) + ' ' +
-                #                                 ' '.join(input[6][:-1])))
                 list_of_KKS_end = extract_kks_from_list(input[7])
-                # list_of_KKS_end = re.findall(config.regular_KKS_any, ' '.join(input[7]))
 
             elif(       (config.regular_axis_full.search(input[5][-1]) or input[5][-1] == '-')
                     and (config.regular_axis_full.search(input[6][-1]) or input[6][-1] == '-')
@@ -1007,14 +895,10 @@ def row_parser(input):
                                     input[6][-1],
                                     input[7][-1]]
                 
-                # list_of_KKS_start = re.findall(config.regular_KKS_any, ' '.join(input[4]))
                 list_of_KKS_start = extract_kks_from_list(input[4])
                 list_of_KKS_end = extract_kks_from_list(input[5][:-1] + input[6][:-1] + input[7][:-1])
-        #         list_of_KKS_end = re.findall(config.regular_KKS_any, 
-        #                         (   ' '.join(input[5][:-1]) + ' ' + 
-        #                             ' '.join(input[6][:-1]) + ' ' +
-        #                             ' '.join(input[7][:-1])))
-        # except Exception as e:
+
+        except Exception as e:
             print(f"row_parser Ошибка парсинга 2 ВАРИАНТ {array_row[1]} - {e}")
 
 
@@ -1036,10 +920,6 @@ def row_parser(input):
                                         input[6][-1]]
 
                 list_of_KKS_start = extract_kks_from_list(input[4][:-1] + input[5][:-1] + input[6][:-1])
-                # list_of_KKS_start = re.findall(config.regular_KKS_any, 
-                #                                (' '.join(input[4][:-1]) + ' ' + 
-                #                                 ' '.join(input[5][:-1]) + ' ' +
-                #                                 ' '.join(input[6][:-1])))
                 
             if(     (config.regular_axis_full.search(input[7][-1]) or input[7][-1] == '-')
                 and (config.regular_axis_full.search(input[8][-1]) or input[8][-1] == '-')
@@ -1050,11 +930,6 @@ def row_parser(input):
                                     input[9][-1]]
 
                 list_of_KKS_end = extract_kks_from_list(input[7][:-1] + input[8][:-1] + input[9][:-1])
-                # list_of_KKS_end = re.findall(config.regular_KKS_any, 
-                #                 (   ' '.join(input[7][:-1]) + ' ' + 
-                #                     ' '.join(input[8][:-1]) + ' ' +
-                #                     ' '.join(input[9][:-1])))
-
 
                 # -------------   есть вариант, когда координата в начале строки -------------------------
 
@@ -1219,7 +1094,7 @@ def row_parser(input):
 
 # -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
     # 19. Резервирование
-# ПЕРЕДЕЛАТЬ! поиск по input[0] через регулярку 
+# TODO ПЕРЕДЕЛАТЬ! поиск по input[0] через регулярку 
     cell = input[3]    
     pattern = re.compile(r'резерв', re.IGNORECASE)
     for line in cell:
@@ -1257,7 +1132,6 @@ def current_version_finder(dir_in, b_name = 'Cable base ver.'):
         print(f'найдена последняя версия кабельной базы {b_name}{current_version - 1}, текущая версия для внесения изменений - {current_version}')
     
     return current_version
-
 
 def base_master(dir_journals, dir_in):
     """
@@ -1466,35 +1340,17 @@ def base_master(dir_journals, dir_in):
             #     for w in sorted(log_of_warnings):
             #         print(w)
 
-
-
-# todo на втором листе вести лог изменений
+# TODO на втором листе вести лог изменений
 # 10
     sheetWrite.auto_filter.ref = sheetWrite.dimensions
     wb.save(dir_in + '/' + b_name + str(current_version)+ '.xlsx')  # Сохраняем файл на диск
     print('Base done!')
 
 # 11
-    
     # for journal in list_of_troubles:
     #     move_file (dir_journals + '/' + journal + '.docx', dir_in + '/troubles')
     # for journal in list_of_void:
     #     move_file (dir_journals + '/' + journal + '.docx', dir_in + '/void_fields')
-
-def base_master_test(dir_in):
-    dir_contents = extract_all_text_from_dir(dir_in)
-    log = ''
-    # for i in range (0, len(dir_contents)):
-    for i in range (0, 10):
-        log += '\n' + '-'*20 + f'   {i + 1}   ' + '-'*20
-        for cell in dir_contents[i]:
-            log += '\n' + str(cell)
-
-        int_list = []  # intermediate list - собираю в общий промежуточный список всю информацию о начале и конце трассы из ячеек между группой и длиной
-        for cell in dir_contents[i][4:-2]:
-            if cell:
-                int_list.extend(cell)
-        log += '\n int_list------- ' + str(int_list)
 
 # Укажите полный путь к файлу
     file_path = dir_in + '\\' + 'log.txt'  # для Windows
