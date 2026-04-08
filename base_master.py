@@ -225,6 +225,7 @@ def extract_coordinates_from_line(line):
     return coords
 
 def extract_kks_from_line(line):
+
     """
     Извлекает все KKS из строки (здание, оборудование, помещение)
 
@@ -236,7 +237,6 @@ def extract_kks_from_line(line):
     print("KKS конца:", result['list_of_KKS_end'])
 
     """
-    kks_list = []
     
     # Проверяем на KKS помещения (самый специфичный)
     if config.regular_KKS_room.search(line):
@@ -393,11 +393,13 @@ def parse_xyz_kks(int_list):
         'list_of_KKS_end': list_of_KKS_end
     }
 
-def parse_kks_room_and_equip(list_of_KKS):
+def parse_kks_room_and_equip(list_of_KKS, all_KKS):
     '''
+    all_KKS - список всех ККС объекта
     из списка list_of_KKS нахожу
     1. помещение
     2. если нет, то здание
+    проверка здания или помещения на соответствие списку
     3. оборудование, которое точно не помещение и не здание
     '''
     KKS_room = ''
@@ -407,10 +409,14 @@ def parse_kks_room_and_equip(list_of_KKS):
 
         for kks in list_of_KKS:
             if config.regular_KKS_room.search(kks):
-                KKS_room = config.regular_KKS_room.search(kks).group().strip()
-                break
+                KKS_building = config.regular_KKS_building.search(kks).group().strip()
+                if all_KKS and KKS_building in all_KKS:
+                    KKS_room = config.regular_KKS_room.search(kks).group().strip()
+                    break
             elif config.regular_KKS_building.search(kks) and not KKS_room:
-                KKS_room = config.regular_KKS_building.search(kks).group().strip()
+                KKS_building = config.regular_KKS_building.search(kks).group().strip()
+                if all_KKS and KKS_building in all_KKS:
+                    KKS_room = KKS_building
 
         for kks in list_of_KKS:
             if (    config.regular_KKS_equipment.search(kks) 
@@ -718,13 +724,14 @@ def take_all_docx_from_dir(journals_directory):
 
     return files
 
-def row_parser(input):
+def row_parser(input, all_KKS):
     """
     парсер строки
 
     Args:
         получает список из функции extract_all_text_from_dir
         [имя журнала, [ячейка 1]   [ячейка 2]  ...  [ячейка N] ]
+    all_KKS - список всех ККС объекта, применяется для заполнения 9 и 14 ячейки
 
     Returns:
     array_row = 
@@ -1115,13 +1122,13 @@ def row_parser(input):
 
     # if array_row[1] == '7.0001':
     #     print(f'row_parser list_of_KKS_start ------ {list_of_KKS_start}')
-    rs, es = parse_kks_room_and_equip(list_of_KKS_start)
+    rs, es = parse_kks_room_and_equip(list_of_KKS_start, all_KKS)
     array_row[9] = str(rs)
     array_row[10] = str(es)
 
     # if array_row[1] == '7.0001':
     #     print(f'row_parser list_of_KKS_end ------ {list_of_KKS_end}')
-    rr, ee = parse_kks_room_and_equip(list_of_KKS_end)
+    rr, ee = parse_kks_room_and_equip(list_of_KKS_end, all_KKS)
     array_row[14] = str(rr)
     array_row[15] = str(ee)
 
@@ -1166,8 +1173,9 @@ def current_version_finder(dir_in, b_name = 'Cable base ver.'):
     
     return current_version
 
-def base_master(dir_journals, dir_in):
+def base_master(dir_journals, dir_in, dir_all_KKS):
     """
+    0. Получаю список всех ККС зданий объекта из таблицы по адресу dir_all_KKS
     1. Нахожу текущую версию кабельного журнала ЕСЛИ он лежит в этой же папке функцией current_version_finder
     2. Получаю список журналов в формате docX из указанной папки
     3. Создаю новую базу со следующей версией
@@ -1216,6 +1224,22 @@ def base_master(dir_journals, dir_in):
                 17, #'Куда y'
                 18 #'Куда z'
                     ]
+
+
+# 0
+    all_KKS = []
+    try:
+        rb1 = load_workbook(dir_all_KKS, data_only=True) # открывается предыдущая версию базы
+        sheetRead1 = rb1.active
+
+        for rowRead in range (2, sheetRead1.max_row + 1):
+            current_KKS = str(sheetRead1.cell(row = rowRead, column = 1).value)
+            if current_KKS:
+                current_KKS = cleanCyrFromLat(current_KKS)
+                if config.regular_KKS_building.search(current_KKS):
+                    all_KKS.append(current_KKS)
+    except Exception as e:
+        print(f'не шмогла, {e}')
 
 # 1
     b_name = 'Cable base ver.'
@@ -1266,7 +1290,9 @@ def base_master(dir_journals, dir_in):
                 [26, 'Статус прокладки', 10],
                 [27, 'Источник информации ВК/СУПИР', 8],
                 [28, 'Статус объединения', 10],
-                [29, 'Warnings', 25]
+                [29, 'Warnings', 25],
+                [30, 'min длина', 10],
+                [31, 'Длина меньше min', 10]
            ]
     
     for head in heads:
@@ -1296,13 +1322,15 @@ def base_master(dir_journals, dir_in):
     if journals:
         for ii, journal in enumerate(journals):
             log_of_warnings = set()
-            print(f'({ii + 1} / {len(journals)})  {journal.stem}', end=" ---> ")  
+            # print(f'({ii + 1} / {len(journals)})  {journal.stem}', end=" ---> ")  
+            print(f'({ii + 1} / {len(journals)})  {journal.stem}')
+
             j_raw_content = None
-            print(f'base_master 6.1 journal - {journal}')
+            # print(f'base_master 6.1 journal - {journal}')
             try:
                 # journal = convert_numbering_to_text(journal)  # TEST
                 j_raw_content = extract_all_text_from_docx(Document(journal)) # список необработанных строк (списков) из текущего кабельного журнала
-                print(f'base_master 6.1 - {len(j_raw_content)} строк')
+                # print(f'base_master 6.1 - {len(j_raw_content)} строк')
             except Exception as e:
                 print(f"Ошибка извлечения данных из журнала {journal.stem}: {e} (ошибка функции base_master 6.1 )")
 #                 print(f'Пробую исправить ошибку нумерации', end=" ---> ")
@@ -1316,23 +1344,17 @@ def base_master(dir_journals, dir_in):
 #                     list_of_troubles.add(journal.stem)
 # 6.2               
             if j_raw_content:
-                # print(f'len(j_raw_content[-1]) = {len(j_raw_content[-1])}')
-                # print(j_raw_content[-1])
                 for raw_row in j_raw_content:
-                    # print(f'base_master 6.2. прочитал строку длиной {len(raw_row)}')
                     if len(raw_row) > 6:
                         raw_row.insert(0, journal.stem)
                         current_row = []
                         try:
-                            # print(f'base_master 6.2. отправил в row_parser строку {len(raw_row)}')
-                            current_row = row_parser(raw_row) # Обработанная строка журнала
-                            # print(f'base_master 6.2. получил строку {len(current_row)}')
+                            current_row = row_parser(raw_row, all_KKS) # Обработанная строка журнала
                         except Exception as e:
                             print(f"Ошибка обработки данных из журнала {journal.stem} в строке {raw_row[1]}: {e} (ошибка функции base_master 6.2 )")
                             log_of_warnings.add(str(f"Ошибка обработки данных из журнала {journal.stem} в строке {raw_row[1]}: {e} (ошибка функции base_master 6.2 )"))
                             list_of_troubles.add(journal.stem)
 
-                        # print(f'тип строки current_row {type(current_row)} длина {len(current_row)}')    
 # 6.3               
                         if current_row:
                             for i in checklist:
@@ -1344,29 +1366,47 @@ def base_master(dir_journals, dir_in):
                                 current_row.append(date_string)
                                 current_row.append(int(current_version))
 
-                                for index, current_cell in enumerate(current_row):
-                                    col = index + 1
+                                for indx, current_cell in enumerate(current_row):
+                                    col = indx + 1
                                     # запись в эксель группы как число и длины как число
-                                    if current_row.index(current_cell) == 3: # группа
+                                    if indx == 3: # группа
                                         try:
                                             sheetWrite.cell(row = rowWrite, column = col, value = int(current_cell))
                                         except Exception as e:
                                             # print(f"Ошибка группы в журнале {journal.stem} в кабеле {current_row[1]}: {e}. Записано в журнал как есть")
                                             sheetWrite.cell(row = rowWrite, column = col, value = str(current_cell))
 
-                                    elif current_row.index(current_cell) in [7, 11, 12, 13, 16, 17, 18, 21]: # длина и координаты
+                                    elif indx in [7, 11, 12, 13, 16, 17, 18, 21]: # длина и координаты
                                         try:
                                             sheetWrite.cell(row = rowWrite, column = col, value = float(current_cell))
                                         except Exception as e:
                                             # print(f"Ошибка длины в журнале {journal.stem} в кабеле {current_row[1]}: {e}. Записано в журнал как есть")
                                             sheetWrite.cell(row = rowWrite, column = col, value = str(current_cell))
-
                                     else:
                                         sheetWrite.cell(row = rowWrite, column = col, value = str(current_cell))
 
                                     # пишу Warning
-                                    sheetWrite.cell(row = rowWrite, column = 30, value = str(raw_row))
+                                    # sheetWrite.cell(row = rowWrite, column = 30, value = str(raw_row))
+                                
+                                try:
+                                    length = float(current_row[7])
+
+                                    xyz_from = [float(current_row[11]), 
+                                                float(current_row[12]),
+                                                float(current_row[13])]
                                     
+                                    xyz_to =   [float(current_row[16]), 
+                                                float(current_row[17]),
+                                                float(current_row[18])]
+                                    
+                                    min_len = round(abs(xyz_from[0] - xyz_to[0]) + abs(xyz_from[1] - xyz_to[1]) + abs(xyz_from[2] - xyz_to[2]))
+                                    sheetWrite.cell(row = rowWrite, column = 31, value = min_len)
+                                    
+                                    if length < min_len:
+                                        sheetWrite.cell(row = rowWrite, column = 32, value = 'ДА')
+                                except Exception as e:
+                                    donothing = True                             
+
                                 rowWrite += 1
             
             # if log_of_warnings:
@@ -1376,6 +1416,9 @@ def base_master(dir_journals, dir_in):
 # TODO на втором листе вести лог изменений
 # 10
     sheetWrite.auto_filter.ref = sheetWrite.dimensions
+    # Этот код включает автофильтр в Excel-таблице на весь диапазон данных, 
+    # который в данный момент есть на листе
+
     wb.save(dir_in + '/' + b_name + str(current_version)+ '.xlsx')  # Сохраняем файл на диск
     print('Base done!')
 
