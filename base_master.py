@@ -8,67 +8,46 @@ import win32com.client
 import os
 from utils import convert_doc_to_docx
 from utils import cleanCyrFromLat
+from utils import is_subset_with_lists
+from utils import all_deep_empty
+from utils import get_mismatch_indices
 from utils import move_file
 import config
 from openpyxl.utils import get_column_letter
 from openpyxl import Workbook
 from openpyxl.styles import PatternFill
 
-def get_mismatch_indices(list1, list2):
-    """
-    вспомогательная функция
+# ----- блок функций для поиска актуальной версии журнала
 
-    Возвращает индексы элементов, которые различаются в двух списках
-    Списки должны быть одинаковой длины
+def current_version_finder(dir_in, b_name = 'Cable base ver.'):
     """
-    if len(list1) != len(list2):
-        raise ValueError("Списки должны быть одинаковой длины")
+    ищу наличие базы в папке и определяю текущую версию базы
+
+    Args:
+        dir_in: адрес папки, где ищу базу
+        b_name: шаблон имени базы
+
+    Returns:
+        current_version - ВАЖНО! Текущая версия - это та, которую я делаю! Если не было базы, текущая - 1, если была в папке 1, то текущая 2 и т.д.
+    """
+
+    current_version = 1 # версия 1 по умолчанию
+
+    local_list_of_bases_vers = [] # список int из версий, которые лежат в папке
+    xlsx_files = list(Path(dir_in).glob(b_name + '*.xlsx')) # нахожу все файлы, начинающиеся как название базы и заканивающиеся .xlsx
+    for file in xlsx_files:
+        dot_index = str(file.stem).rfind('.')
+        local_list_of_bases_vers.append(int(str(file.stem)[dot_index + 1:]))  # отрезаю от названия все после точки, превращаю в int и добавляю в список
     
-    mismatch_indices = []
-    for i, (a, b) in enumerate(zip(list1, list2)):
-        if a != b:
-            mismatch_indices.append(i)
+    if not local_list_of_bases_vers:
+        print(f'Кабельные базы не найдены в указанной папке')
+    else:
+        current_version = max(local_list_of_bases_vers) + 1
+        print(f'найдена последняя версия кабельной базы {b_name}{current_version - 1}, текущая версия для внесения изменений - {current_version}')
     
-    return mismatch_indices
+    return current_version
 
-def make_hashable(item):
-    """
-    вспомогательная функция
-
-    Рекурсивно преобразует списки в кортежи для возможности хеширования"""
-    if isinstance(item, list):    # является ли item списком
-        return tuple(make_hashable(x) for x in item)
-    return item
-
-def is_subset_with_lists(list1, list2):
-    """
-    вспомогательная функция is_subset_with_lists(list1, list2)
-    Проверяет, является ли list1 подмножеством list2, где элементы могут быть списками
-    list1 = [[1, 2], 3, [4, [5, 6]]]
-    list2 = [[1, 2], 3, 4, [4, [5, 6]], [7, 8]]
-    print(is_subset_with_lists(list1, list2))  # True
-    """
-    # Преобразуем оба списка в хешируемые кортежи
-    set1 = {make_hashable(x) for x in list1}
-    set2 = {make_hashable(x) for x in list2}
-    
-    return set1.issubset(set2)
-
-def all_deep_empty(lst):
-    """
-    вспомогательная функция
-
-    Рекурсивно проверяет, пусты ли все вложенные списки
-    выводит true если все вложенные списки пустые
-    """
-    if not isinstance(lst, list):
-        return False
-    
-    if not lst:  # пустой список
-        return True
-    
-    # Проверяем каждый элемент
-    return all(all_deep_empty(item) for item in lst)
+# ----- блок функций для работы с docx
 
 def convert_numbering_to_text(doc_path):
     """
@@ -104,32 +83,7 @@ def convert_numbering_to_text(doc_path):
         if word:
             word.Quit()
 
-def find_first_and_last_sublist_index(big_list, small_list):
-    """
-    Находит индексы первого и последнего вхождения small_list в big_list
-
-    # Пример
-    big =   [1, 2, 3, 1, 2, 3, 4, 1, 2, 3]
-    small = [1, 2, 3]
-
-    first, last = find_first_and_last_sublist_index(big, small)
-    print(f"Первое вхождение: индекс {first}")  # 0
-    print(f"Последнее вхождение: индекс {last}")  # 7
-
-    """
-    len_small = len(small_list)
-    len_big = len(big_list)
-    
-    first_index = -1
-    last_index = -1
-    
-    for i in range(len_big - len_small + 1):
-        if big_list[i:i + len_small] == small_list:
-            if first_index == -1:
-                first_index = i
-            last_index = i
-    
-    return first_index, last_index
+# ----- блок функций для извлечения данных из таблиц
 
 def remove_duplicate_pairs(lst):
     """
@@ -208,225 +162,32 @@ def remove_duplicates(lst):
     
     return result
 
-# ----- блок функций для поиска ККС и координат
-
-def extract_coordinates_from_line(line):
+def find_first_and_last_sublist_index(big_list, small_list):
     """
-    Извлекает все координаты из строки (могут быть разделены пробелами/табуляциями)
-    """
-    parts = line.split()
-    coords = []
-    for part in parts:
-        # Очищаем от лишних символов
-        part = part.strip()
-        # Проверяем, соответствует ли часть шаблону координаты
-        if config.regular_axis_full.match(part):
-            coords.append(part)
-    return coords
+    Находит индексы первого и последнего вхождения small_list в big_list
 
-def extract_kks_from_line(line):
+    # Пример
+    big =   [1, 2, 3, 1, 2, 3, 4, 1, 2, 3]
+    small = [1, 2, 3]
+
+    first, last = find_first_and_last_sublist_index(big, small)
+    print(f"Первое вхождение: индекс {first}")  # 0
+    print(f"Последнее вхождение: индекс {last}")  # 7
 
     """
-    Извлекает все KKS из строки (здание, оборудование, помещение)
-
-    result = parse_int_list(int_list)
+    len_small = len(small_list)
+    len_big = len(big_list)
     
-    print("Координаты начала:", result['list_of_axis_start'])
-    print("Координаты конца:", result['list_of_axis_end'])
-    print("KKS начала:", result['list_of_KKS_start'])
-    print("KKS конца:", result['list_of_KKS_end'])
-
-    """
+    first_index = -1
+    last_index = -1
     
-    # Проверяем на KKS помещения (самый специфичный)
-    if config.regular_KKS_room.search(line):
-        # Может быть несколько в одной строке
-        matches = config.regular_KKS_room.findall(line)
-        kks_list.extend(matches)
+    for i in range(len_big - len_small + 1):
+        if big_list[i:i + len_small] == small_list:
+            if first_index == -1:
+                first_index = i
+            last_index = i
     
-    # Проверяем на KKS здания
-    if config.regular_KKS_building.search(line):
-        matches = config.regular_KKS_building.findall(line)
-        kks_list.extend(matches)
-    
-    # Проверяем на KKS оборудования
-    if config.regular_KKS_equipment.search(line):
-        matches = config.regular_KKS_equipment.findall(line)
-        # Фильтруем, чтобы не добавлять уже найденные
-        for match in matches:
-            if match not in kks_list:
-                kks_list.append(match)
-    
-    return kks_list
-
-def extract_kks_from_list(list_of_strings):
-    '''
-    вспомогательная функция
-    поиск ККС в списке строк
-    return список ККС
-    '''
-    list_of_kks = []
-    if list_of_strings:
-        for st in list_of_strings:
-            if config.regular_KKS_any.search(st):
-                list_of_kks.append(config.regular_KKS_any.search(st).group().strip())
-    return list(set(list_of_kks))
-
-def parse_xyz_kks(int_list):
-    """
-    Основная функция парсинга списка int_list
-
-    result = parse_int_list(int_list)
-    
-    print("Координаты начала:", result['list_of_axis_start'])
-    print("Координаты конца:", result['list_of_axis_end'])
-    print("KKS начала:", result['list_of_KKS_start'])
-    print("KKS конца:", result['list_of_KKS_end'])
-
-    """
-    list_of_axis_start = []
-    list_of_axis_end = []
-    list_of_KKS_start = []
-    list_of_KKS_end = []
-    
-    i = 0
-    n = len(int_list)
-    
-    while i < n:
-        line = int_list[i]
-        
-        # Шаг 1: Пытаемся найти координаты начала (3 подряд координаты)
-        coords_start = []
-        temp_i = i
-        
-        # Собираем координаты из текущей строки и следующих
-        while len(coords_start) < 3 and temp_i < n:
-            line_coords = extract_coordinates_from_line(int_list[temp_i])
-            if line_coords:
-                coords_start.extend(line_coords)
-                temp_i += 1
-            else:
-                # Если в текущей строке нет координат, возможно они в следующей
-                if not coords_start:
-                    # Проверяем, может это KKS или другой текст
-                    temp_i += 1
-                else:
-                    break
-        
-        if len(coords_start) >= 3:
-            # Берём первые 3 координаты
-            list_of_axis_start.append(coords_start[:3])
-            i = temp_i
-        else:
-            i += 1
-            continue
-        
-        # Шаг 2: Ищем KKS начала (до координат конца)
-        kks_start_found = []
-        temp_i = i
-        kks_collected = set()
-        
-        # Ищем KKS в следующих строках, пока не найдём координаты конца
-        while temp_i < n:
-            # Проверяем, не начались ли координаты конца
-            test_coords = extract_coordinates_from_line(int_list[temp_i])
-            if test_coords:
-                # Если нашли координаты, выходим из поиска KKS
-                break
-            
-            # Ищем KKS в текущей строке
-            kks_in_line = extract_kks_from_line(int_list[temp_i])
-            for kks in kks_in_line:
-                if kks not in kks_collected:
-                    kks_collected.add(kks)
-                    kks_start_found.append(kks)
-            
-            temp_i += 1
-        
-        list_of_KKS_start.append(kks_start_found if kks_start_found else [])
-        i = temp_i
-        
-        # Шаг 3: Ищем координаты конца (3 подряд координаты)
-        coords_end = []
-        
-        while len(coords_end) < 3 and i < n:
-            line_coords = extract_coordinates_from_line(int_list[i])
-            if line_coords:
-                coords_end.extend(line_coords)
-                i += 1
-            else:
-                if not coords_end:
-                    i += 1
-                else:
-                    break
-        
-        if len(coords_end) >= 3:
-            list_of_axis_end.append(coords_end[:3])
-        else:
-            # Если не нашли координаты конца, пропускаем
-            continue
-        
-        # Шаг 4: Ищем KKS конца
-        kks_end_found = []
-        kks_collected = set()
-        
-        while i < n:
-            # Проверяем, не началась ли следующая пара координат
-            test_coords = extract_coordinates_from_line(int_list[i])
-            if test_coords:
-                break
-            
-            kks_in_line = extract_kks_from_line(int_list[i])
-            for kks in kks_in_line:
-                if kks not in kks_collected:
-                    kks_collected.add(kks)
-                    kks_end_found.append(kks)
-            
-            i += 1
-        
-        list_of_KKS_end.append(kks_end_found if kks_end_found else [])
-    
-    return {
-        'list_of_axis_start': list_of_axis_start,
-        'list_of_axis_end': list_of_axis_end,
-        'list_of_KKS_start': list_of_KKS_start,
-        'list_of_KKS_end': list_of_KKS_end
-    }
-
-def parse_kks_room_and_equip(list_of_KKS, all_KKS):
-    '''
-    all_KKS - список всех ККС объекта
-    из списка list_of_KKS нахожу
-    1. помещение
-    2. если нет, то здание
-    проверка здания или помещения на соответствие списку
-    3. оборудование, которое точно не помещение и не здание
-    '''
-    KKS_room = ''
-    KKS_equipment = ''
-    if list_of_KKS:
-        list_of_KKS = list(set(list_of_KKS))
-
-        for kks in list_of_KKS:
-            if config.regular_KKS_room.search(kks):
-                KKS_building = config.regular_KKS_building.search(kks).group().strip()
-                if all_KKS and KKS_building in all_KKS:
-                    KKS_room = config.regular_KKS_room.search(kks).group().strip()
-                    break
-            elif config.regular_KKS_building.search(kks) and not KKS_room:
-                KKS_building = config.regular_KKS_building.search(kks).group().strip()
-                if all_KKS and KKS_building in all_KKS:
-                    KKS_room = KKS_building
-
-        for kks in list_of_KKS:
-            if (    config.regular_KKS_equipment.search(kks) 
-                and config.regular_KKS_equipment.search(kks).group().strip() != KKS_room
-            ):
-                KKS_equipment = config.regular_KKS_equipment.search(kks).group().strip()
-                break
-    return KKS_room, KKS_equipment
-
-# ----- блок функций для поиска ККС и координат
+    return first_index, last_index
 
 def extract_all_text_from_cell(cell):
     """
@@ -724,6 +485,256 @@ def take_all_docx_from_dir(journals_directory):
 
     return files
 
+# ----- блок функций для парсинга
+
+# def extract_coordinates_from_line(line):
+#     """
+#     Извлекает все координаты из строки (могут быть разделены пробелами/табуляциями)
+#     """
+#     parts = line.split()
+#     coords = []
+#     for part in parts:
+#         # Очищаем от лишних символов
+#         part = part.strip()
+#         # Проверяем, соответствует ли часть шаблону координаты
+#         if config.regular_axis_full.match(part):
+#             coords.append(part)
+#     return coords
+
+# def extract_kks_from_line(line):
+
+#     """
+#     Извлекает все KKS из строки (здание, оборудование, помещение)
+
+#     result = parse_int_list(int_list)
+    
+#     print("Координаты начала:", result['list_of_axis_start'])
+#     print("Координаты конца:", result['list_of_axis_end'])
+#     print("KKS начала:", result['list_of_KKS_start'])
+#     print("KKS конца:", result['list_of_KKS_end'])
+
+#     """
+    
+#     # Проверяем на KKS помещения (самый специфичный)
+#     if config.regular_KKS_room.search(line):
+#         # Может быть несколько в одной строке
+#         matches = config.regular_KKS_room.findall(line)
+#         kks_list.extend(matches)
+    
+#     # Проверяем на KKS здания
+#     if config.regular_KKS_building.search(line):
+#         matches = config.regular_KKS_building.findall(line)
+#         kks_list.extend(matches)
+    
+#     # Проверяем на KKS оборудования
+#     if config.regular_KKS_equipment.search(line):
+#         matches = config.regular_KKS_equipment.findall(line)
+#         # Фильтруем, чтобы не добавлять уже найденные
+#         for match in matches:
+#             if match not in kks_list:
+#                 kks_list.append(match)
+    
+#     return kks_list
+
+# def parse_xyz_kks(int_list):
+#     """
+#     Основная функция парсинга списка int_list
+
+#     result = parse_int_list(int_list)
+    
+#     print("Координаты начала:", result['list_of_axis_start'])
+#     print("Координаты конца:", result['list_of_axis_end'])
+#     print("KKS начала:", result['list_of_KKS_start'])
+#     print("KKS конца:", result['list_of_KKS_end'])
+
+#     """
+#     list_of_axis_start = []
+#     list_of_axis_end = []
+#     list_of_KKS_start = []
+#     list_of_KKS_end = []
+    
+#     i = 0
+#     n = len(int_list)
+    
+#     while i < n:
+#         line = int_list[i]
+        
+#         # Шаг 1: Пытаемся найти координаты начала (3 подряд координаты)
+#         coords_start = []
+#         temp_i = i
+        
+#         # Собираем координаты из текущей строки и следующих
+#         while len(coords_start) < 3 and temp_i < n:
+#             line_coords = extract_coordinates_from_line(int_list[temp_i])
+#             if line_coords:
+#                 coords_start.extend(line_coords)
+#                 temp_i += 1
+#             else:
+#                 # Если в текущей строке нет координат, возможно они в следующей
+#                 if not coords_start:
+#                     # Проверяем, может это KKS или другой текст
+#                     temp_i += 1
+#                 else:
+#                     break
+        
+#         if len(coords_start) >= 3:
+#             # Берём первые 3 координаты
+#             list_of_axis_start.append(coords_start[:3])
+#             i = temp_i
+#         else:
+#             i += 1
+#             continue
+        
+#         # Шаг 2: Ищем KKS начала (до координат конца)
+#         kks_start_found = []
+#         temp_i = i
+#         kks_collected = set()
+        
+#         # Ищем KKS в следующих строках, пока не найдём координаты конца
+#         while temp_i < n:
+#             # Проверяем, не начались ли координаты конца
+#             test_coords = extract_coordinates_from_line(int_list[temp_i])
+#             if test_coords:
+#                 # Если нашли координаты, выходим из поиска KKS
+#                 break
+            
+#             # Ищем KKS в текущей строке
+#             kks_in_line = extract_kks_from_line(int_list[temp_i])
+#             for kks in kks_in_line:
+#                 if kks not in kks_collected:
+#                     kks_collected.add(kks)
+#                     kks_start_found.append(kks)
+            
+#             temp_i += 1
+        
+#         list_of_KKS_start.append(kks_start_found if kks_start_found else [])
+#         i = temp_i
+        
+#         # Шаг 3: Ищем координаты конца (3 подряд координаты)
+#         coords_end = []
+        
+#         while len(coords_end) < 3 and i < n:
+#             line_coords = extract_coordinates_from_line(int_list[i])
+#             if line_coords:
+#                 coords_end.extend(line_coords)
+#                 i += 1
+#             else:
+#                 if not coords_end:
+#                     i += 1
+#                 else:
+#                     break
+        
+#         if len(coords_end) >= 3:
+#             list_of_axis_end.append(coords_end[:3])
+#         else:
+#             # Если не нашли координаты конца, пропускаем
+#             continue
+        
+#         # Шаг 4: Ищем KKS конца
+#         kks_end_found = []
+#         kks_collected = set()
+        
+#         while i < n:
+#             # Проверяем, не началась ли следующая пара координат
+#             test_coords = extract_coordinates_from_line(int_list[i])
+#             if test_coords:
+#                 break
+            
+#             kks_in_line = extract_kks_from_line(int_list[i])
+#             for kks in kks_in_line:
+#                 if kks not in kks_collected:
+#                     kks_collected.add(kks)
+#                     kks_end_found.append(kks)
+            
+#             i += 1
+        
+#         list_of_KKS_end.append(kks_end_found if kks_end_found else [])
+    
+#     return {
+#         'list_of_axis_start': list_of_axis_start,
+#         'list_of_axis_end': list_of_axis_end,
+#         'list_of_KKS_start': list_of_KKS_start,
+#         'list_of_KKS_end': list_of_KKS_end
+#     }
+
+def extract_kks_from_list(list_of_strings):
+    '''
+    вспомогательная функция
+    поиск ККС в списке строк
+    return список ККС
+    '''
+    list_of_kks = []
+    if list_of_strings:
+        for st in list_of_strings:
+            if config.regular_KKS_any.search(st):
+                list_of_kks.append(config.regular_KKS_any.search(st).group().strip())
+    return list(set(list_of_kks))
+
+def parse_kks_room_and_equip(list_of_KKS, all_KKS):
+    '''
+    all_KKS - список всех ККС объекта
+    из списка list_of_KKS нахожу
+    1. помещение
+    2. если нет, то здание
+    проверка здания или помещения на соответствие списку
+    3. оборудование, которое точно не помещение и не здание
+    '''
+    KKS_room = ''
+    KKS_equipment = ''
+
+    # беру только ККС, не координаты
+    all_all_KKS = []
+    for line in all_KKS:
+        all_all_KKS.append(line[0])
+    all_KKS = all_all_KKS
+
+    if list_of_KKS:
+        list_of_KKS = list(set(list_of_KKS))
+
+        for kks in list_of_KKS:
+            if config.regular_KKS_room.search(kks):
+                KKS_building = config.regular_KKS_building.search(kks).group().strip()
+                if all_KKS and KKS_building in all_KKS:
+                    KKS_room = config.regular_KKS_room.search(kks).group().strip()
+                    break
+            elif config.regular_KKS_building.search(kks) and not KKS_room:
+                KKS_building = config.regular_KKS_building.search(kks).group().strip()
+                if all_KKS and KKS_building in all_KKS:
+                    KKS_room = KKS_building
+
+        for kks in list_of_KKS:
+            if (    config.regular_KKS_equipment.search(kks) 
+                and config.regular_KKS_equipment.search(kks).group().strip() != KKS_room
+            ):
+                KKS_equipment = config.regular_KKS_equipment.search(kks).group().strip()
+                break
+    return KKS_room, KKS_equipment
+
+def get_all_kks_with_XY(dir_all_KKS):
+    '''
+    Функция открывает реестр ККС по ссылке
+    Составляет и возвращает список all_KKS [[KKS, (если есть) квадрат X, (если есть) квадрат Y], [ , , ], ...]
+
+    Важно! на генплане Аккую ось Y горизонтальная, X вертикальная
+    '''
+
+    all_KKS = []
+    try:
+        rb1 = load_workbook(dir_all_KKS, data_only=True) 
+        sheetRead1 = rb1.active
+
+        for rowRead in range (2, sheetRead1.max_row + 1):
+            current_KKS = str(sheetRead1.cell(row = rowRead, column = 1).value)
+            currend_XY =  str(sheetRead1.cell(row = rowRead, column = 4).value)
+            if current_KKS:
+                current_KKS = cleanCyrFromLat(current_KKS)
+                if config.regular_KKS_building.search(current_KKS):
+                    currend_XY = currend_XY.split
+                    all_KKS.append([current_KKS, currend_XY[0].replace(';', ''), currend_XY[1].replace(';', '')])
+    except Exception as e:
+        print(f'get_all_kks_with_XY не шмогла, {e}')
+    return all_KKS
+
 def row_parser(input, all_KKS):
     """
     парсер строки
@@ -998,7 +1009,7 @@ def row_parser(input, all_KKS):
 
 
 # ------------ ПАРСИНГ КООРДИНАТ и ККС - 4 ВАРИАНТ ----------------------
-                # координаты расположены подряд в отдельных ячейках
+            # координаты расположены подряд в отдельных ячейках
     elif len(input) > 12:
 
 # собираю в общий промежуточный список всю информацию о начале и конце трассы из ячеек между группой и длиной
@@ -1108,8 +1119,7 @@ def row_parser(input, all_KKS):
             except Exception as e:
                 print(f"row_parser Ошибка парсинга 4 ВАРИАНТ (поиск ККС 2 комбинация) {array_row[1]} - {e}")
 
-# ВЫВОД ДАННЫХ 
-
+# ВЫВОД ДАННЫХ
     if len(list_of_axis_start) == 3:
         array_row[11] = list_of_axis_start[0].replace('+', '').strip()
         array_row[12] = list_of_axis_start[1].replace('+', '').strip()
@@ -1120,14 +1130,10 @@ def row_parser(input, all_KKS):
         array_row[17] = list_of_axis_end[1].replace('+', '').strip()
         array_row[18] = list_of_axis_end[2].replace('+', '').strip()
 
-    # if array_row[1] == '7.0001':
-    #     print(f'row_parser list_of_KKS_start ------ {list_of_KKS_start}')
     rs, es = parse_kks_room_and_equip(list_of_KKS_start, all_KKS)
     array_row[9] = str(rs)
     array_row[10] = str(es)
 
-    # if array_row[1] == '7.0001':
-    #     print(f'row_parser list_of_KKS_end ------ {list_of_KKS_end}')
     rr, ee = parse_kks_room_and_equip(list_of_KKS_end, all_KKS)
     array_row[14] = str(rr)
     array_row[15] = str(ee)
@@ -1145,35 +1151,9 @@ def row_parser(input, all_KKS):
     # print(f'row_parser отработал')
     return array_row
 
-def current_version_finder(dir_in, b_name = 'Cable base ver.'):
-    """
-    ищу наличие базы в папке и определяю текущую версию базы
+# ----- Работа с журналами
 
-    Args:
-        dir_in: адрес папки, где ищу базу
-        b_name: шаблон имени базы
-
-    Returns:
-        current_version - ВАЖНО! Текущая версия - это та, которую я делаю! Если не было базы, текущая - 1, если была в папке 1, то текущая 2 и т.д.
-    """
-
-    current_version = 1 # версия 1 по умолчанию
-
-    local_list_of_bases_vers = [] # список int из версий, которые лежат в папке
-    xlsx_files = list(Path(dir_in).glob(b_name + '*.xlsx')) # нахожу все файлы, начинающиеся как название базы и заканивающиеся .xlsx
-    for file in xlsx_files:
-        dot_index = str(file.stem).rfind('.')
-        local_list_of_bases_vers.append(int(str(file.stem)[dot_index + 1:]))  # отрезаю от названия все после точки, превращаю в int и добавляю в список
-    
-    if not local_list_of_bases_vers:
-        print(f'Кабельные базы не найдены в указанной папке')
-    else:
-        current_version = max(local_list_of_bases_vers) + 1
-        print(f'найдена последняя версия кабельной базы {b_name}{current_version - 1}, текущая версия для внесения изменений - {current_version}')
-    
-    return current_version
-
-def base_master(dir_journals, dir_in, dir_all_KKS):
+def base_master_start(dir_journals, dir_in, dir_all_KKS):
     """
     0. Получаю список всех ККС зданий объекта из таблицы по адресу dir_all_KKS
     1. Нахожу текущую версию кабельного журнала ЕСЛИ он лежит в этой же папке функцией current_version_finder
@@ -1224,22 +1204,21 @@ def base_master(dir_journals, dir_in, dir_all_KKS):
                 17, #'Куда y'
                 18 #'Куда z'
                     ]
-
-
 # 0
-    all_KKS = []
-    try:
-        rb1 = load_workbook(dir_all_KKS, data_only=True) # открывается предыдущая версию базы
-        sheetRead1 = rb1.active
+    all_KKS = get_all_kks_with_XY(dir_all_KKS)
+    
+    # try:
+    #     rb1 = load_workbook(dir_all_KKS, data_only=True) # открывается предыдущая версию базы
+    #     sheetRead1 = rb1.active
 
-        for rowRead in range (2, sheetRead1.max_row + 1):
-            current_KKS = str(sheetRead1.cell(row = rowRead, column = 1).value)
-            if current_KKS:
-                current_KKS = cleanCyrFromLat(current_KKS)
-                if config.regular_KKS_building.search(current_KKS):
-                    all_KKS.append(current_KKS)
-    except Exception as e:
-        print(f'не шмогла, {e}')
+    #     for rowRead in range (2, sheetRead1.max_row + 1):
+    #         current_KKS = str(sheetRead1.cell(row = rowRead, column = 1).value)
+    #         if current_KKS:
+    #             current_KKS = cleanCyrFromLat(current_KKS)
+    #             if config.regular_KKS_building.search(current_KKS):
+    #                 all_KKS.append(current_KKS)
+    # except Exception as e:
+    #     print(f'не шмогла, {e}')
 
 # 1
     b_name = 'Cable base ver.'
@@ -1290,7 +1269,7 @@ def base_master(dir_journals, dir_in, dir_all_KKS):
                 [26, 'Статус прокладки', 10],
                 [27, 'Источник информации ВК/СУПИР', 8],
                 [28, 'Статус объединения', 10],
-                [29, 'Warnings', 25],
+                [29, 'Raw', 25],
                 [30, 'min длина', 10],
                 [31, 'Длина меньше min', 10]
            ]
@@ -1385,9 +1364,9 @@ def base_master(dir_journals, dir_in, dir_all_KKS):
                                     else:
                                         sheetWrite.cell(row = rowWrite, column = col, value = str(current_cell))
 
-                                    # пишу Warning
-                                    # sheetWrite.cell(row = rowWrite, column = 30, value = str(raw_row))
-                                
+                                    # пишу raw
+                                    sheetWrite.cell(row = rowWrite, column = 30, value = str(raw_row))
+# подсчет минимальной длины кабеля
                                 try:
                                     length = float(current_row[7])
 
@@ -1422,17 +1401,19 @@ def base_master(dir_journals, dir_in, dir_all_KKS):
     wb.save(dir_in + '/' + b_name + str(current_version)+ '.xlsx')  # Сохраняем файл на диск
     print('Base done!')
 
+'''
 # 11
-    # for journal in list_of_troubles:
-    #     move_file (dir_journals + '/' + journal + '.docx', dir_in + '/troubles')
-    # for journal in list_of_void:
-    #     move_file (dir_journals + '/' + journal + '.docx', dir_in + '/void_fields')
+    for journal in list_of_troubles:
+        move_file (dir_journals + '/' + journal + '.docx', dir_in + '/troubles')
+    for journal in list_of_void:
+        move_file (dir_journals + '/' + journal + '.docx', dir_in + '/void_fields')
 
 # Укажите полный путь к файлу
-#     file_path = dir_in + '\\' + 'log.txt'  # для Windows
-# # Открываем файл для записи и сохраняем текст
+    file_path = dir_in + '\\' + 'log.txt'  # для Windows
+# Открываем файл для записи и сохраняем текст
 
-#     with open(file_path, 'w', encoding='utf-8') as file:
-#         file.write(log)
+    with open(file_path, 'w', encoding='utf-8') as file:
+        file.write(log)
 
-#     print(f"Файл сохранён: {file_path}")
+    print(f"Файл сохранён: {file_path}")
+'''

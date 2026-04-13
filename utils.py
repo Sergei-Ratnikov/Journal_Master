@@ -33,7 +33,6 @@ def reverse_trace(text):
     except Exception as e:
         raise
 
-
 def move_file(source_path, destination_dir):
     """
     Переносит файл из source_path в папку destination_dir
@@ -64,7 +63,6 @@ def move_file(source_path, destination_dir):
     except Exception as e:
         print(f"Ошибка при переносе: {e}")
         return False
-
 
 def convert_doc_to_docx(doc_path):
     '''
