@@ -1367,41 +1367,6 @@ def base_master_start(dir_journals, dir_in, dir_all_KKS):
     date_string = today.strftime("%Y.%m.%d")  # '2026.03.09'
 
     rowWrite = 2        # переменная - строка записи в excel
-# 4 Самая старая версия
-    # if current_version > 1:     # если изменяется существующая  база
-    #     rb = load_workbook(dir_in + '/' + b_name + str(current_version - 1) + '.xlsx', data_only=True) # открывается предыдущая версию базы
-    #     sheetRead = rb.active
-
-        # for rowRead in range (2, sheetRead.max_row + 1):
-        #     if str(sheetRead.cell(row = rowRead, column = 1).value) not in journals_names: # если журнал не в списке
-        #         for col in range(1, sheetRead.max_column + 1):
-        #             sheetWrite.cell(row = rowWrite, column = col, value = sheetRead.cell(row = rowRead, column = col).value)
-        #         rowWrite += 1
-
-
-
-# 4  первая версия дипсика, добавил прогресс-бар, но по-прежнему очень медленно работает
-#     if current_version > 1:
-#         rb = load_workbook(dir_in + '/' + b_name + str(current_version - 1) + '.xlsx', data_only=True)
-#         sheetRead = rb.active
-        
-#         from tqdm import tqdm
-        
-#         total_rows = sheetRead.max_row - 1  # количество строк данных (без заголовка)
-#         copied_count = 0
-# # 5
-#         print(f"\n📦 Перенос данных из предыдущей версии (Cable base ver.{current_version - 1}.xlsx)...")
-#         with tqdm(total=total_rows, desc="Копирование строк", unit="строка") as pbar:
-#             for rowRead in range(2, sheetRead.max_row + 1):
-#                 journal_name = str(sheetRead.cell(row=rowRead, column=1).value)
-#                 if journal_name not in journals_names:
-#                     for col in range(1, sheetRead.max_column + 1):
-#                         sheetWrite.cell(row=rowWrite, column=col, value=sheetRead.cell(row=rowRead, column=col).value)
-#                     rowWrite += 1
-#                     copied_count += 1
-#                 pbar.update(1)
-        
-#         print(f"✅ Скопировано {copied_count} строк, пропущено (обработано сейчас): {total_rows - copied_count}")
 
 # 4
     copied_count = 0
@@ -1430,103 +1395,99 @@ def base_master_start(dir_journals, dir_in, dir_all_KKS):
                 copied_count += 1
                 pbar.update(1)
 
-
-
-
-# 6.1
+# 6.1 Обработка журналов
     if journals:
-        for ii, journal in enumerate(journals):
+        from tqdm import tqdm
+        print("\n📄 Начинаю обработку журналов...")
+        
+        for ii, journal in enumerate(tqdm(journals, desc="Обработка", unit="журнал")):
             log_of_warnings = set()
-            # print(f'({ii + 1} / {len(journals)})  {journal.stem}', end=" ---> ")  
-            print(f'({ii + 1} / {len(journals)})  {journal.stem}')
-
             j_raw_content = None
-            # print(f'base_master 6.1 journal - {journal}')
-            try:
-                # journal = convert_numbering_to_text(journal)  # TEST
-                j_raw_content = extract_all_text_from_docx(Document(journal)) # список необработанных строк (списков) из текущего кабельного журнала
-                # print(f'base_master 6.1 - {len(j_raw_content)} строк')
-            except Exception as e:
-                print(f"Ошибка извлечения данных из журнала {journal.stem}: {e} (ошибка функции base_master 6.1 )")
-#                 print(f'Пробую исправить ошибку нумерации', end=" ---> ")
-# # 6.1.1
-#                 try:
-#                     journal = convert_numbering_to_text(journal)
-#                     j_raw_content = extract_all_text_from_docx(Document(journal)) # список необработанных строк (списков) из текущего кабельного журнала
-#                     print(f'base_master 6.1.1 - {len(j_raw_content)} строк')
-#                 except Exception as e:
-#                     print(f"Все равно ошибка извлечения данных из журнала {journal.stem}: {e} (ошибка функции base_master 6.1.1 )")
-#                     list_of_troubles.add(journal.stem)
-# 6.2               
-            if j_raw_content:
-                for raw_row in j_raw_content:
-                    if len(raw_row) > 6:
-                        raw_row.insert(0, journal.stem)
-                        current_row = []
-                        try:
-                            current_row = row_parser(raw_row, all_KKS) # Обработанная строка журнала
-                        except Exception as e:
-                            print(f"Ошибка обработки данных из журнала {journal.stem} в строке {raw_row[1]}: {e} (ошибка функции base_master 6.2 )")
-                            log_of_warnings.add(str(f"Ошибка обработки данных из журнала {journal.stem} в строке {raw_row[1]}: {e} (ошибка функции base_master 6.2 )"))
-                            list_of_troubles.add(journal.stem)
-
-# 6.3               
-                        if current_row:
-                            for i in checklist:
-                                if not current_row[i]:
-                                    log_of_warnings.add(str(f"Недостаточность данных в журнале {journal.stem} в строке {current_row[1]}"))
-                                    list_of_void.add(journal.stem)
-# 6.4
-                            if current_row[0] not in list_of_troubles:
-                                current_row.append(date_string)
-                                current_row.append(int(current_version))
-
-                                for indx, current_cell in enumerate(current_row):
-                                    col = indx + 1
-                                    # запись в эксель группы как число и длины как число
-                                    if indx == 3: # группа
-                                        try:
-                                            sheetWrite.cell(row = rowWrite, column = col, value = int(current_cell))
-                                        except Exception as e:
-                                            # print(f"Ошибка группы в журнале {journal.stem} в кабеле {current_row[1]}: {e}. Записано в журнал как есть")
-                                            sheetWrite.cell(row = rowWrite, column = col, value = str(current_cell))
-
-                                    elif indx in [7, 11, 12, 13, 16, 17, 18, 21]: # длина и координаты
-                                        try:
-                                            sheetWrite.cell(row = rowWrite, column = col, value = float(current_cell))
-                                        except Exception as e:
-                                            # print(f"Ошибка длины в журнале {journal.stem} в кабеле {current_row[1]}: {e}. Записано в журнал как есть")
-                                            sheetWrite.cell(row = rowWrite, column = col, value = str(current_cell))
-                                    else:
-                                        sheetWrite.cell(row = rowWrite, column = col, value = str(current_cell))
-
-                                    # пишу raw
-                                    sheetWrite.cell(row = rowWrite, column = 30, value = str(raw_row))
-# подсчет минимальной длины кабеля
-                                try:
-                                    length = float(current_row[7])
-
-                                    xyz_from = [float(current_row[11]), 
-                                                float(current_row[12]),
-                                                float(current_row[13])]
-                                    
-                                    xyz_to =   [float(current_row[16]), 
-                                                float(current_row[17]),
-                                                float(current_row[18])]
-                                    
-                                    min_len = round(abs(xyz_from[0] - xyz_to[0]) + abs(xyz_from[1] - xyz_to[1]) + abs(xyz_from[2] - xyz_to[2]))
-                                    sheetWrite.cell(row = rowWrite, column = 31, value = min_len)
-                                    
-                                    if length < min_len:
-                                        sheetWrite.cell(row = rowWrite, column = 32, value = 'ДА')
-                                except Exception as e:
-                                    donothing = True                             
-
-                                rowWrite += 1
             
-            # if log_of_warnings:
-            #     for w in sorted(log_of_warnings):
-            #         print(w)
+            # Сначала пробуем прочитать без конвертации нумерации
+            try:
+                doc = Document(journal)
+                j_raw_content = extract_all_text_from_docx(doc)
+            except Exception as e:
+                print(f"\n⚠️ Ошибка чтения {journal.stem}: {e}")
+                print(f"🔄 Пробую преобразовать автонумерацию...")
+                
+                # Пробуем конвертировать нумерацию
+                try:
+                    converted_path = convert_numbering_to_text(journal)
+                    if converted_path and Path(converted_path).exists():
+                        doc = Document(converted_path)
+                        j_raw_content = extract_all_text_from_docx(doc)
+                        print(f"✅ Конвертация помогла, файл {journal.stem} обработан")
+                    else:
+                        print(f"❌ Конвертация не удалась, файл {journal.stem} пропущен")
+                        list_of_troubles.add(journal.stem)
+                        continue
+                except Exception as e2:
+                    print(f"❌ Ошибка конвертации {journal.stem}: {e2}")
+                    list_of_troubles.add(journal.stem)
+                    continue
+            
+            if not j_raw_content:
+                print(f"⚠️ В {journal.stem} нет данных для обработки")
+                continue
+            
+# 6.2 Обработка строк
+            for raw_row in j_raw_content:
+                if len(raw_row) > 6:
+                    raw_row.insert(0, journal.stem)
+                    current_row = []
+                    try:
+                        current_row = row_parser(raw_row, all_KKS)
+                    except Exception as e:
+                        print(f"❌ Ошибка обработки строки в {journal.stem}: {e}")
+                        log_of_warnings.add(str(f"Ошибка обработки строки в {journal.stem}: {e}"))
+                        list_of_troubles.add(journal.stem)
+                        continue
+                    
+# 6.3 Проверка полноты данных
+                    if current_row:
+                        for i in checklist:
+                            if not current_row[i]:
+                                log_of_warnings.add(str(f"Недостаточно данных в {journal.stem}, строка {current_row[1]}"))
+                                list_of_void.add(journal.stem)
+                        
+# 6.4 Запись в новую базу
+                        if current_row[0] not in list_of_troubles:
+                            current_row.append(date_string)
+                            current_row.append(int(current_version))
+                            
+                            for indx, current_cell in enumerate(current_row):
+                                col = indx + 1
+                                if indx == 3:  # Группа
+                                    try:
+                                        sheetWrite.cell(row=rowWrite, column=col, value=int(current_cell))
+                                    except:
+                                        sheetWrite.cell(row=rowWrite, column=col, value=str(current_cell))
+                                elif indx in [7, 11, 12, 13, 16, 17, 18, 21]:  # Длина и координаты
+                                    try:
+                                        sheetWrite.cell(row=rowWrite, column=col, value=float(current_cell))
+                                    except:
+                                        sheetWrite.cell(row=rowWrite, column=col, value=str(current_cell))
+                                else:
+                                    sheetWrite.cell(row=rowWrite, column=col, value=str(current_cell))
+                            
+                            # raw строка
+                            sheetWrite.cell(row=rowWrite, column=30, value=str(raw_row))
+                            
+                            # Подсчёт минимальной длины кабеля (если все координаты есть)
+                            try:
+                                length = float(current_row[7])
+                                xyz_from = [float(current_row[11]), float(current_row[12]), float(current_row[13])]
+                                xyz_to = [float(current_row[16]), float(current_row[17]), float(current_row[18])]
+                                min_len = round(abs(xyz_from[0] - xyz_to[0]) + abs(xyz_from[1] - xyz_to[1]) + abs(xyz_from[2] - xyz_to[2]))
+                                sheetWrite.cell(row=rowWrite, column=31, value=min_len)
+                                if length < min_len:
+                                    sheetWrite.cell(row=rowWrite, column=32, value='ДА')
+                            except:
+                                pass
+                            
+                            rowWrite += 1
 
 # TODO на втором листе вести лог изменений
 # 10
