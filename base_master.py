@@ -1367,16 +1367,71 @@ def base_master_start(dir_journals, dir_in, dir_all_KKS):
     date_string = today.strftime("%Y.%m.%d")  # '2026.03.09'
 
     rowWrite = 2        # переменная - строка записи в excel
+# 4 Самая старая версия
+    # if current_version > 1:     # если изменяется существующая  база
+    #     rb = load_workbook(dir_in + '/' + b_name + str(current_version - 1) + '.xlsx', data_only=True) # открывается предыдущая версию базы
+    #     sheetRead = rb.active
+
+        # for rowRead in range (2, sheetRead.max_row + 1):
+        #     if str(sheetRead.cell(row = rowRead, column = 1).value) not in journals_names: # если журнал не в списке
+        #         for col in range(1, sheetRead.max_column + 1):
+        #             sheetWrite.cell(row = rowWrite, column = col, value = sheetRead.cell(row = rowRead, column = col).value)
+        #         rowWrite += 1
+
+
+
+# 4  первая версия дипсика, добавил прогресс-бар, но по-прежнему очень медленно работает
+#     if current_version > 1:
+#         rb = load_workbook(dir_in + '/' + b_name + str(current_version - 1) + '.xlsx', data_only=True)
+#         sheetRead = rb.active
+        
+#         from tqdm import tqdm
+        
+#         total_rows = sheetRead.max_row - 1  # количество строк данных (без заголовка)
+#         copied_count = 0
+# # 5
+#         print(f"\n📦 Перенос данных из предыдущей версии (Cable base ver.{current_version - 1}.xlsx)...")
+#         with tqdm(total=total_rows, desc="Копирование строк", unit="строка") as pbar:
+#             for rowRead in range(2, sheetRead.max_row + 1):
+#                 journal_name = str(sheetRead.cell(row=rowRead, column=1).value)
+#                 if journal_name not in journals_names:
+#                     for col in range(1, sheetRead.max_column + 1):
+#                         sheetWrite.cell(row=rowWrite, column=col, value=sheetRead.cell(row=rowRead, column=col).value)
+#                     rowWrite += 1
+#                     copied_count += 1
+#                 pbar.update(1)
+        
+#         print(f"✅ Скопировано {copied_count} строк, пропущено (обработано сейчас): {total_rows - copied_count}")
+
 # 4
-    if current_version > 1:     # если изменяется существующая  база
-        rb = load_workbook(dir_in + '/' + b_name + str(current_version - 1) + '.xlsx', data_only=True) # открывается предыдущая версию базы
+    copied_count = 0
+    if current_version > 1:
+        rb = load_workbook(dir_in + '/' + b_name + str(current_version - 1) + '.xlsx', data_only=True)
         sheetRead = rb.active
-# 5
-        for rowRead in range (2, sheetRead.max_row + 1):
-            if str(sheetRead.cell(row = rowRead, column = 1).value) not in journals_names: # если журнал не в списке
-                for col in range(1, sheetRead.max_column + 1):
-                    sheetWrite.cell(row = rowWrite, column = col, value = sheetRead.cell(row = rowRead, column = col).value)
+        
+        # Создаём список имён журналов из колонки A (без заголовка)
+        journal_names_from_old = []
+        rows_to_copy = []
+        
+        for idx, row in enumerate(sheetRead.iter_rows(min_row=2, values_only=True), start=2):
+            journal_name = str(row[0]) if row[0] else ''
+            journal_names_from_old.append(journal_name)
+            if journal_name not in journals_names:
+                rows_to_copy.append((idx, row))
+        
+        from tqdm import tqdm
+# 5        
+        print(f"\n📦 Перенос данных из предыдущей версии...")
+        with tqdm(total=len(rows_to_copy), desc="Копирование строк", unit="строка") as pbar:
+            for idx, row_data in rows_to_copy:
+                for col_idx, value in enumerate(row_data, start=1):
+                    sheetWrite.cell(row=rowWrite, column=col_idx, value=value)
                 rowWrite += 1
+                copied_count += 1
+                pbar.update(1)
+
+
+
 
 # 6.1
     if journals:
