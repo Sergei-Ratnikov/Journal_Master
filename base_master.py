@@ -6,6 +6,7 @@ from pathlib import Path
 from datetime import date
 import win32com.client
 import os
+import shutil
 from utils import convert_doc_to_docx
 from utils import cleanCyrFromLat
 from utils import is_subset_with_lists
@@ -242,7 +243,7 @@ def extract_all_text_from_table(table):
             возвращаю содержимое таблицы, список строк, каждая строка - список ячеек, каждая ячейка - 
             список текстовых строк
     """
-# 0
+    # 0
     if not table.rows:
         print("Таблица пуста")
         return
@@ -275,10 +276,10 @@ def extract_all_text_from_table(table):
     try:
         for row in table_contents:
             current_row = row
-# 1 проверка пустоты левого столбца
+    # 1 проверка пустоты левого столбца
             if all_deep_empty(row[0]) and config.regular_num.search(' '.join(row[1])):
                 current_row = row[1:]
-#     если правый столбец пустой, а следующий содержит буквы или минус (столбец с трассой) или тоже пустой (столбец с пустой трассой)
+    #   если правый столбец пустой, а следующий содержит буквы или минус (столбец с трассой) или тоже пустой (столбец с пустой трассой)
             if all_deep_empty(row[-1]) and (    any(config.regular_letter_minus.search(s) for s in row[-2]) 
                                             or  all_deep_empty(row[-2])):
                 current_row = current_row[:-1]
@@ -290,10 +291,13 @@ def extract_all_text_from_table(table):
         print(f'Ошибка! extract_all_text_from_table (1) -  {e}')
 
     # Удаление шапки и примечаний
-# 2
-# 3
-# Удаление строк таблицы, не содержащих в первой ячейке номер
-# TODO проверить на избыточную строгость - удаляются строки без нумерации в некоторых журналах
+    # 2
+    # 3
+    # Удаление строк таблицы, не содержащих в первой ячейке номер
+    # TODO проверить на избыточную строгость - удаляются строки без нумерации в некоторых журналах
+    
+    '''
+    предыдущая версия, если все работает, то удалить
     try:
         list_for_delete = [] # список строк для удаления
         # составляю список строк таблицы для удаления
@@ -307,13 +311,37 @@ def extract_all_text_from_table(table):
                 list_for_delete.append(index)
         new_table_contents = [item for idx, item in enumerate(table_contents) if idx not in list_for_delete] # новый список из неудаляемых строк
         table_contents = new_table_contents
+    '''
+
+    try:
+        list_for_delete = [] # список строк для удаления
+        for index, row in enumerate(table_contents):
+            # Проверяем, что строка не пуста и первая ячейка содержит хотя бы один элемент
+            if row and row[0] and row[0][0]:
+                match = config.regular_num.search(row[0][0])
+                if match:
+                    table_contents[index][0] = [match.group()]
+                else:
+                    list_for_delete.append(index)
+            else:
+                # Если первая ячейка пуста, строку тоже удаляем
+                list_for_delete.append(index)
+        
+        new_table_contents = [item for idx, item in enumerate(table_contents) if idx not in list_for_delete]
+        table_contents = new_table_contents
+
+    except Exception as e:
+        print(f'Ошибка! extract_all_text_from_table (3) - {e}')
+
     
     except Exception as e:
         print(f'Ошибка! extract_all_text_from_table (3) -  {e}')
 
-# 4
-# заплатка ошибки повторения строк из-за вложенной таблицы в столбце 2 (группа раскладки) -  
-# если две строки совпадают во всем кроме группы, то нижняя удаляется
+    # 4
+    # заплатка ошибки повторения строк из-за вложенной таблицы в столбце 2 (группа раскладки) -  
+    # если две строки совпадают во всем кроме группы, то нижняя удаляется
+    '''
+    предыдущая версия
     try:
         list_for_delete = [] # список строк для удаления
         for i in range (0, len(table_contents) - 1):
@@ -323,10 +351,29 @@ def extract_all_text_from_table(table):
         table_contents = new_table_contents
     except Exception as e:
         print(f'Ошибка! extract_all_text_from_table (4) -  {e}')
+    '''
+
+    try:
+        list_for_delete = []
+        for i in range(0, len(table_contents) - 1):
+            # Проверяем, что строки существуют и имеют одинаковую длину
+            if (i + 1 < len(table_contents) and 
+                len(table_contents[i]) == len(table_contents[i + 1])):
+                
+                mismatch_indices = get_mismatch_indices(table_contents[i], table_contents[i + 1])
+                if mismatch_indices == [2]:  # если различаются только в 3 столбце
+                    list_for_delete.append(i + 1)
+            elif i + 1 < len(table_contents):
+                # Строки разной длины — не пытаемся сравнивать
+                continue
+                
+        new_table_contents = [item for idx, item in enumerate(table_contents) if idx not in list_for_delete]
+        table_contents = new_table_contents
+    except Exception as e:
+        print(f'Ошибка! extract_all_text_from_table (4) - {e}')
 
 
-
-# 6
+    # 6
     # заплатка ошибки, которая расщепляет одну строку на несколько. Я нахожу все строки с одним номером в 0 столбце и 
     # склеиваю их в 1 общую строку по принциу:
     # если значения совпадают, то игнор, если нет, то склейка
@@ -338,16 +385,16 @@ def extract_all_text_from_table(table):
         for i_row in range (0, len(table_contents)):
             if table_contents[i_row][0] not in cable_numbers:
                 cable_numbers.append(table_contents[i_row][0])
-# здесь я собрал список номеров кабелей, которые есть в table_contents
+    # здесь я собрал список номеров кабелей, которые есть в table_contents
 
         for cable_number in cable_numbers:
-# Я беру каждый номер кабеля
+    # Я беру каждый номер кабеля
             list_of_rows_with_current_number = []  
-# создаю список индексов строк из table_contents, содержащих расщепленную запись о кабеле
+    # создаю список индексов строк из table_contents, содержащих расщепленную запись о кабеле
             for j, rowrow in enumerate(table_contents):
                 if rowrow[0] == cable_number:
                     list_of_rows_with_current_number.append(j)
-# и добавляю в него все индексы строк из table_contents с информацией о кабеле
+    # и добавляю в него все индексы строк из table_contents с информацией о кабеле
 
 
             # if cable_number[0] == '8.0001':
@@ -357,11 +404,11 @@ def extract_all_text_from_table(table):
 
             current_row = []    # создаю новую строку, которую буду наполнять информацией о текущем кабеле cable_number
             i = list_of_rows_with_current_number[0]
-# i - первый индекс расщепленной строки для данного кабеля в table_contents
+    # i - первый индекс расщепленной строки для данного кабеля в table_contents
             current_row = table_contents[i]
-# первую из строк просто беру всю
+    # первую из строк просто беру всю
             if len(list_of_rows_with_current_number) > 1:
-# если строка расщеплена, т.е. есть больше одной строки с этим номером кабеля
+    # если строка расщеплена, т.е. есть больше одной строки с этим номером кабеля
                 for i in range (1, len(list_of_rows_with_current_number)):
                     r = list_of_rows_with_current_number[i] # индекс строки, содержащая расщепленную запись о кабеле в table_contents
                     for i_cell in range (0, len(current_row) - 1): # индекс ячейки в строке
@@ -369,13 +416,13 @@ def extract_all_text_from_table(table):
                             current_row[i_cell].extend(table_contents[r][i_cell])
 
             new_table_contents.append(current_row)
-# записываю новую строку
+    # записываю новую строку
         table_contents = new_table_contents
     except Exception as e:
         print(f'Ошибка! extract_all_text_from_table 6 -  {e}')
 
-# 7
-# удаляю повторяющиеся ячейки из строки
+    # 7
+    # удаляю повторяющиеся ячейки из строки
     new_table_contents = []
     try:
         for row in table_contents:
@@ -386,11 +433,10 @@ def extract_all_text_from_table(table):
         print(f'Ошибка! extract_all_text_from_table 7 -  {e}')
 
 
-
-# 5
-# обработка записи координат, указанных в одной ячейке через символ табуляции или пробел: 
-# '1783.3 \t1780.2 \t1.0'
-# такую запись нужно разбить и одну ячейку заменить тремя
+    # 5
+    # обработка записи координат, указанных в одной ячейке через символ табуляции или пробел: 
+    # '1783.3 \t1780.2 \t1.0'
+    # такую запись нужно разбить и одну ячейку заменить тремя
     try:
         regular_axis_local = re.compile(r'[+-]?\d{1,8}\.?,?\d{0,3}')
         for i_row in range (0, len(table_contents)):
@@ -467,22 +513,50 @@ def take_all_docx_from_dir(journals_directory):
         files - общий список всех docx файлов - существующих + отконвертированных из doc в docx
                         ]
     """
-    files = []
-    source_dir = Path(journals_directory).resolve()  # resolve - Получение абсолютного пути к папке
-    # Собираю все doc и docx файлы в папке
-    docx_files = list(source_dir.glob('*.docx'))    # список из объектов Path, отвечающих условию пути source_dir и названию *.docx
-    doc_files = list(source_dir.glob('*.doc'))      # список из объектов Path, отвечающих условию пути source_dir и названию *.doc
+def take_all_docx_from_dir(journals_directory):
+    """
+    поиск всех документов doc и docx в папке
+    преобразует doc в docx функцией convert_doc_to_docx
+    переносит исходные .doc файлы в подпапку 'doc files'
+    возвращает список файлов .docx (существующих + сконвертированных)
 
-    docx_files_names = []    # временный список имен файлов .docx в папке для фильтрации
-    # в общий список должны попасть все .docx и только те .doc у которых нет такого же файла docx (уже ранее созданного) чтобы избежать задвоения 
-    for docx_file in docx_files:
-        docx_files_names.append(docx_file.stem)  # имя файла Path без разширения
+    Args:
+        journals_directory - строка с адресом папки
 
-    files = docx_files
+    Returns:
+        files - общий список всех docx файлов (объекты Path)
+    """
+    source_dir = Path(journals_directory).resolve()
+    
+    # Папка для исходных .doc файлов
+    doc_backup_dir = source_dir / 'doc files'
+    
+    # Собираем все doc и docx файлы
+    docx_files = list(source_dir.glob('*.docx'))
+    doc_files = list(source_dir.glob('*.doc'))
+    
+    # Множество имён существующих .docx (без расширения)
+    existing_docx_stems = {f.stem for f in docx_files}
+    
+    # Результат: начинаем с уже существующих .docx
+    files = docx_files.copy()
+    
+    # Обрабатываем каждый .doc файл
     for doc_file in doc_files:
-        if doc_file.stem not in docx_files_names:
-                files.append(convert_doc_to_docx(str(doc_file)))  # Конвертация в .docx и добавление
-
+        # Если нет одноимённого .docx, конвертируем
+        if doc_file.stem not in existing_docx_stems:
+            new_docx_str = convert_doc_to_docx(str(doc_file))
+            files.append(Path(new_docx_str))
+        
+        # Переносим исходный .doc в папку 'doc files'
+        try:
+            doc_backup_dir.mkdir(exist_ok=True)  # создаём папку, если её нет
+            dest_path = doc_backup_dir / doc_file.name
+            shutil.move(str(doc_file), str(dest_path))
+            print(f"  📁 .doc файл перемещён: {doc_file.name} -> doc files/")
+        except Exception as e:
+            print(f"  ⚠️ Не удалось переместить {doc_file.name}: {e}")
+    
     return files
 
 # ----- блок функций для парсинга
@@ -720,19 +794,26 @@ def get_all_kks_with_XY(dir_all_KKS):
 
     all_KKS = []
     try:
-        rb1 = load_workbook(dir_all_KKS, data_only=True) 
+        rb1 = load_workbook(dir_all_KKS, data_only=True)
         sheetRead1 = rb1.active
 
-        for rowRead in range (2, sheetRead1.max_row + 1):
-            current_KKS = str(sheetRead1.cell(row = rowRead, column = 1).value)
-            currend_XY =  str(sheetRead1.cell(row = rowRead, column = 4).value)
+        for rowRead in range(2, sheetRead1.max_row + 1):
+            current_KKS = str(sheetRead1.cell(row=rowRead, column=1).value)
+            currend_XY = str(sheetRead1.cell(row=rowRead, column=4).value)
             if current_KKS:
                 current_KKS = cleanCyrFromLat(current_KKS)
                 if config.regular_KKS_building.search(current_KKS):
-                    currend_XY = currend_XY.split
-                    all_KKS.append([current_KKS, currend_XY[0].replace(';', ''), currend_XY[1].replace(';', '')])
+                    # Разделяем строку "X ; Y", предполагаем, что разделитель - точка с запятой
+                    parts = currend_XY.split(';')
+                    if len(parts) >= 2:
+                        x_coord = parts[0].strip().replace(';', '')
+                        y_coord = parts[1].strip().replace(';', '')
+                        all_KKS.append([current_KKS, x_coord, y_coord])
+                    else:
+                        # Если нет Y, записываем только X
+                        all_KKS.append([current_KKS, currend_XY.strip().replace(';', ''), ''])
     except Exception as e:
-        print(f'get_all_kks_with_XY не шмогла, {e}')
+        print(f'get_all_kks_with_XY: {e}')
     return all_KKS
 
 def row_parser(input, all_KKS):

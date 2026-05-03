@@ -82,3 +82,59 @@ def convert_doc_to_docx(doc_path):
         return docx_path
     except Exception as e:
         raise
+
+def make_hashable(item):
+    """
+    вспомогательная функция
+
+    Рекурсивно преобразует списки в кортежи для возможности хеширования"""
+    if isinstance(item, list):    # является ли item списком
+        return tuple(make_hashable(x) for x in item)
+    return item
+
+def is_subset_with_lists(list1, list2):
+    """
+    вспомогательная функция is_subset_with_lists(list1, list2)
+    Проверяет, является ли list1 подмножеством list2, где элементы могут быть списками
+    list1 = [[1, 2], 3, [4, [5, 6]]]
+    list2 = [[1, 2], 3, 4, [4, [5, 6]], [7, 8]]
+    print(is_subset_with_lists(list1, list2))  # True
+    """
+    # Преобразуем оба списка в хешируемые кортежи
+    set1 = {make_hashable(x) for x in list1}
+    set2 = {make_hashable(x) for x in list2}
+    
+    return set1.issubset(set2)
+
+def all_deep_empty(lst):
+    """
+    вспомогательная функция
+
+    Рекурсивно проверяет, пусты ли все вложенные списки
+    выводит true если все вложенные списки пустые
+    """
+    if not isinstance(lst, list):
+        return False
+    
+    if not lst:  # пустой список
+        return True
+    
+    # Проверяем каждый элемент
+    return all(all_deep_empty(item) for item in lst)
+
+def get_mismatch_indices(list1, list2):
+    """
+    вспомогательная функция
+
+    Возвращает индексы элементов, которые различаются в двух списках
+    Списки должны быть одинаковой длины
+    """
+    if len(list1) != len(list2):
+        raise ValueError("Списки должны быть одинаковой длины")
+    
+    mismatch_indices = []
+    for i, (a, b) in enumerate(zip(list1, list2)):
+        if a != b:
+            mismatch_indices.append(i)
+    
+    return mismatch_indices
