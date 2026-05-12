@@ -7,6 +7,7 @@ from datetime import date
 import win32com.client
 import os
 import shutil
+import json
 from utils import convert_doc_to_docx
 from utils import cleanCyrFromLat
 from utils import is_subset_with_lists
@@ -260,56 +261,6 @@ def take_all_docx_from_dir(journals_directory):
     return files
 
 # ----- блок функций для работы с KKS и координатами
-
-def get_all_building_bounds(dir_all_KKS):
-    """
-    Загружает данные из KKS.xlsx по адресу dir_all_KKS и возвращает словарь:
-    {   '00UKS': {'x_min': 1400, 'x_max': 1500, 'y_min': 2000, 'y_max': 2100, 'is_valid': True},
-        '00UYZ': {'is_valid': False, 'original': '00UYB-00UKU-00UKS'},    ...
-    }
-    """
-    building_bounds = {} 
-    try:
-        rb = load_workbook(dir_all_KKS, data_only=True)
-        sheet = rb.active
-        for row in range(2, sheet.max_row + 1):
-            kks = cleanCyrFromLat(str(sheet.cell(row=row, column=1).value).strip())
-            route = str(sheet.cell(row=row, column=4).value).strip()
-            if not kks or not config.regular_KKS_building.search(kks):
-                continue
-            bounds = parse_route_to_bounds(route) # координаты
-            building_bounds[kks] = bounds
-    except Exception as e:
-        print(f"Ошибка загрузки KKS.xlsx (get_all_building_bounds): {e}")
-    return building_bounds
-
-def parse_route_to_bounds(route_string):
-    '''
-    преобразование кординат размерной сетки генплана типа 16E; 14N в координаты квадрата x, y
-    Args:
-        route_string: строка, которая может содержать координаты типа 16E; 14N
-    '''
-    pattern = re.compile(r'(\d{1,2})\s*([EN])') 
-    matches = pattern.findall(route_string.upper()) 
-    if len(matches) < 2:
-        return {'is_valid': False, 'original': route_string}
-    x_val = None
-    y_val = None
-    for num, axis in matches: # num - число, axis - ось
-        value = int(num) * 100
-        if axis == 'E':
-            y_val = value
-        elif axis == 'N':
-            x_val = value
-    if x_val is None or y_val is None:
-        return {'is_valid': False, 'original': route_string}
-    return {
-        'is_valid': True,
-        'x_min': x_val,
-        'x_max': x_val + 100,
-        'y_min': y_val,
-        'y_max': y_val + 100
-    }
 
 def parse_coordinate_pair(x_str, y_str):
     x_clean = x_str.strip().replace(',', '.')
@@ -744,14 +695,14 @@ def row_parser(input_row, building_bounds):
 
 # ----- основная функция
 
-def base_master_start(dir_journals, dir_in, dir_all_KKS):
+def base_master_start(dir_journals, dir_in):
     '''
     Функция 
     
     Args:
         dir_journals: папка с журналами
         dir_in: папка с кабельной базой, в которую будет сохранена новая база
-        dir_all_KKS: папку с реестром ККС
+        все ккс в JSON
     
     Returns:
         кабельная база
@@ -759,7 +710,18 @@ def base_master_start(dir_journals, dir_in, dir_all_KKS):
 
     print("\nЗапуск base_master_start...")
 
-    building_bounds = get_all_building_bounds(dir_all_KKS) # словарь из границ координат зданий
+    # Получение списка границ координат зданий в формате
+    #     "32UGU": {
+    #     "is_valid": true,
+    #     "original": "10E; 16N",
+    #     "x_min": 1600,
+    #     "x_max": 1700,
+    #     "y_min": 1000,
+    #     "y_max": 1100
+    #   }
+
+    with open('KKS_building_bounds.json', 'r', encoding='utf-8') as f:
+        building_bounds = json.load(f)
 
 # === поиск старой версии базы
     b_name = 'Cable base ver.'  # шаблон имени базы

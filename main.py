@@ -3,10 +3,7 @@ from base_master import base_master_start
 
 start_time = time.time()
 
-# base_master_test('Word Works')
-# base_master('Word Works/to base', 'Word Works/to base')
-# base_master('WordWorks/troubles', 'WordWorks/troubles')
-base_master_start('C:/Users/User/Documents/Python/WordWorks/Исходники', 'C:/Users/User/Documents/Python/WordWorks/Исходники', 'C:/Users/User/Documents/Python/JournalMaster/KKS.xlsx')
+base_master_start('C:/Users/User/Documents/Python/WordWorks/Исходники', 'C:/Users/User/Documents/Python/WordWorks/Исходники')
 
 end_time = time.time()    
 duration = end_time - start_time
