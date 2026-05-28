@@ -281,76 +281,104 @@ def parse_kks_block(block_cells, building_bounds):
             block_cells = block_cells[0]
             # Теперь block_cells - это плоский список, и мы перейдём к обработке (БЛОК Б)
         
+
         # ---------------------------------------------------------
         # СЛУЧАЙ 2: ТРИ ОТДЕЛЬНЫХ СПИСКА (три ячейки)
         # ---------------------------------------------------------
         else:
             # Это случай 4.3: три ячейки, каждая содержит одну координату
             # и повторяющиеся KKS.
-            all_rooms = set()     # множество для хранения уникальных помещений
-            all_equip = set()     # множество для хранения уникального оборудования
-            coords = ['', '', ''] # список для трёх координат (X, Y, Z)
             
-            # Обрабатываем первые три ячейки (больше нам не нужно)
+            # =========================================================
+            # ШАГ 1: ПРОВЕРКА ЦЕЛОСТНОСТИ БЛОКА
+            # =========================================================
+            # Убеждаемся, что все три ячейки относятся к одному блоку.
+            # Для этого сравниваем KKS помещений и оборудования во всех трёх ячейках.
+            # Они должны быть одинаковыми (или отсутствовать) во всех трёх строках.
+            
+            # Собираем уникальные KKS из каждой ячейки
+            rooms_per_cell = []
+            equip_per_cell = []
+            
+            for cell in block_cells[:3]:
+                cell_rooms = set()
+                cell_equip = set()
+                if isinstance(cell, list):
+                    for elem in cell:
+                        if config.regular_KKS_room.search(elem):
+                            cell_rooms.add(elem)
+                        elif config.regular_KKS_building.search(elem):
+                            cell_rooms.add(elem)  # здание считаем помещением
+                        elif config.regular_KKS_equipment.search(elem):
+                            cell_equip.add(elem)
+                rooms_per_cell.append(cell_rooms)
+                equip_per_cell.append(cell_equip)
+            
+            # Проверяем, что KKS помещений одинаковы во всех ячейках
+            # (или пустые во всех)
+            rooms_consistent = True
+            first_rooms = rooms_per_cell[0] if rooms_per_cell else set()
+            for rooms_set in rooms_per_cell[1:]:
+                if rooms_set != first_rooms:
+                    rooms_consistent = False
+                    break
+            
+            # Проверяем, что KKS оборудования одинаковы во всех ячейках
+            equip_consistent = True
+            first_equip = equip_per_cell[0] if equip_per_cell else set()
+            for equip_set in equip_per_cell[1:]:
+                if equip_set != first_equip:
+                    equip_consistent = False
+                    break
+            
+            # Если KKS не совпадают во всех ячейках, это означает,
+            # что в блок попали данные из разных мест.
+            # В этом случае возвращаем пустые результаты (блок будет обработан по-другому).
+            if not rooms_consistent or not equip_consistent:
+                # Проблема: смешанные данные из "Откуда" и "Куда"
+                # Возвращаем пустые значения, чтобы вышестоящий код попробовал другое разбиение
+                return [], [], ['', '', '']
+            
+            # =========================================================
+            # ШАГ 2: СБОР KKS И КООРДИНАТ
+            # =========================================================
+            all_rooms = set()
+            all_equip = set()
+            coords = ['', '', '']
+            
             for i, cell in enumerate(block_cells[:3]):
-                # Каждая cell - это список строк (одна ячейка таблицы)
-                # Например: ['00UKS22R017', '00CYE36', 'Контроллер...', '1779.1']
                 if not isinstance(cell, list):
-                    # Если по какой-то причине cell не список, оборачиваем в список
                     cell = [cell]
                 
-                '''
-                если блок Откуда или Куда представлен ТРЕМЯ СПИСКАМИ - случай 4.3.
-                [
-                    ['00UKS22R017', '00CYE36', '...', '1779.1'],
-                    ['00UKS22R017', '00CYE36', '...', '1756.3'],
-                    ['00UKS22R017', '00CYE36', '...', '13.9']
-                ]
-                то cell - это один из этих списков, например ['00UKS22R017', '00CYE36', '...', '1779.1']
-                '''
-
                 # --- ПОИСК КООРДИНАТЫ В ЭТОЙ ЯЧЕЙКЕ ---
-                # Координата может быть ТОЛЬКО первым или последним элементом списка.
-                # Если вместо координаты стоит '-', это означает отсутствие координаты.
+                # Координата может быть ТОЛЬКО первым или последним элементом списка
                 coord_value = ''
-                # Проверяем первый элемент
                 if cell and cell[0] == '-':
-                    # Явный знак "-" — координата отсутствует, оставляем пустую строку
                     coord_value = ''
                 elif cell and is_number(cell[0]):
                     coord_value = cell[0]
                 
-                # Проверяем последний элемент (если он не совпадает с первым и координата ещё не найдена)
                 if coord_value == '' and len(cell) > 1:
                     if cell[-1] == '-':
                         coord_value = ''
                     elif is_number(cell[-1]):
                         coord_value = cell[-1]
-                # Если координата не найдена ни в начале, ни в конце, оставляем пустую строку
                 
-                # Сохраняем координату в соответствующую позицию (X, Y или Z)
                 if i < 3:
                     coords[i] = coord_value
-
-
+                
                 # --- ИЗВЛЕЧЕНИЕ KKS ИЗ ЭТОЙ ЯЧЕЙКИ ---
-                # Перебираем все элементы ячейки (и координату, и текст, и KKS)
                 for elem in cell:
-                    # 1. Проверяем, является ли элемент KKS ПОМЕЩЕНИЯ
                     if config.regular_KKS_room.search(elem):
-                        all_rooms.add(elem)      # добавляем в множество помещений
-                    # 2. Если не помещение, проверяем, является ли элемент KKS ЗДАНИЯ
+                        all_rooms.add(elem)
                     elif config.regular_KKS_building.search(elem):
-                        all_rooms.add(elem)      # здание тоже считается "помещением" для геопривязки
-                    # 3. Если не здание, проверяем, является ли элемент KKS ОБОРУДОВАНИЯ
+                        all_rooms.add(elem)
                     elif config.regular_KKS_equipment.search(elem):
-                        all_equip.add(elem)      # добавляем в множество оборудования
-                    # Текстовые описания (на русском/английском) игнорируем
-
-            # Возвращаем результат:
-            # - списки помещений и оборудования (преобразуем множества в списки)
-            # - координаты (может быть ['1779.1', '1756.3', '13.9'])
+                        all_equip.add(elem)
+            
             return list(all_rooms), list(all_equip), coords
+
+
     
     # =========================================================================
     # БЛОК Б: ОДИН СПИСОК (одна ячейка) - случаи 4.1 и 4.2
@@ -513,141 +541,225 @@ def row_parser(input_row, building_bounds):
     
     Задача: определить, какие ячейки относятся к блоку "Откуда", а какие — к "Куда".
     
-    Проблема: мы не знаем, сколько ячеек занимает каждый блок.
     Возможные варианты:
-      - "Откуда" = 1 ячейка, "Куда" = все остальные
-      - "Откуда" = 3 ячейки, "Куда" = все остальные
-
-    Решение: перебираем возможные размеры блока "Откуда", для каждого варианта
-    разбиваем ячейки на две группы, парсим каждую группу и смотрим,
-    получились ли осмысленные данные (есть ли KKS или координаты в обеих группах).
-    Первый подходящий вариант считаем правильным.
-
+      - Всего 2 ячейки: первая = "Откуда", вторая = "Куда"
+      - Всего 6 ячеек: первые три = "Откуда", вторые три = "Куда"
+      - Всего 4 ячейки:
+          * Вариант А: первая ячейка содержит все данные (KKS и координаты) = "Откуда",
+                       остальные три = "Куда" (каждая с одной координатой)
+          * Вариант Б: последняя ячейка содержит все данные = "Куда",
+                       первые три = "Откуда" (каждая с одной координатой)
+    
+    Решение:
+      1. Если строк 2 → первая = "Откуда", вторая = "Куда"
+      2. Если строк 6 → первые три = "Откуда", вторые три = "Куда"
+      3. Если строк 4:
+         3.1 Проверяем первую строку: ищем в ней ККС помещения, ККС оборудования и ТРИ координаты.
+              Если всё найдено → первая строка = "Откуда", остальные три = "Куда"
+         3.2 Если не найдено, проверяем последнюю строку: ищем в ней ККС помещения, ККС оборудования и ТРИ координаты.
+              Если всё найдено → последняя строка = "Куда", первые три = "Откуда"
     '''
     # ======================================================================
 
     # Определяем границы диапазона ячеек, которые содержат блоки "Откуда" и "Куда"
-    
-    # start_idx - индекс первой ячейки
-    #   0 — журнал, 1 — номер, 2 — ККС кабеля, 3 — группа, 4 — ПЕРВАЯ ячейка блоков
     start_idx = 4
-    
-    # end_idx — это индекс ячейки, ДО которой находятся блоки
-    # Если ячейка Длина найдена (length_idx != -1), то блоки заканчиваются перед ней
-    # Если длина не найдена, то блоки идут до предпоследней ячейки (перед трассой)
-    # Потому что последняя ячейка (input_row[-1]) — это трасса
     end_idx = length_idx if length_idx != -1 else len(input_row) - 2
     
-    # Если границы некорректны (нет места для блоков), возвращаем то, что уже собрали
     if end_idx <= start_idx:
         return array_row
     
-    # ------------------------------------------------------------------
-    # ПЕРЕМЕННЫЕ ДЛЯ ХРАНЕНИЯ ЛУЧШЕГО ВАРИАНТА РАЗБИЕНИЯ
-    # ------------------------------------------------------------------
-    # Эти переменные нужны, чтобы сохранить результат парсинга для того варианта
-    # разбиения, который окажется правильным (первым подходящим)
+    # Получаем список ячеек с блоками
+    block_cells = input_row[start_idx:end_idx]
+    num_cells = len(block_cells)
     
-    best_rooms_from = []      # список KKS помещений для блока "Откуда" (начало)
-    best_equip_from = []      # список KKS оборудования для блока "Откуда"
-    best_coords_from = []     # список координат [X, Y, Z] для блока "Откуда"
+    # Инициализация переменных для результатов
+    list_of_KKS_start = []
+    list_of_KKS_equipment_start = []
+    list_of_axis_start = []
     
-    best_rooms_to = []        # список KKS помещений для блока "Куда" (конец)
-    best_equip_to = []        # список KKS оборудования для блока "Куда"
-    best_coords_to = []       # список координат [X, Y, Z] для блока "Куда"
+    list_of_KKS_end = []
+    list_of_KKS_equipment_end = []
+    list_of_axis_end = []
     
-    # ------------------------------------------------------------------
-    # ПЕРЕБОР ВОЗМОЖНЫХ РАЗМЕРОВ БЛОКА "ОТКУДА"
-    # ------------------------------------------------------------------
-    # possible_sizes — список размеров, которые мы проверяем
-    # Сейчас проверяем только 1 и 3, потому что:
-    #   - 1 ячейка — когда все данные (KKS и координаты) в одной ячейке
-    #   - 3 ячейки — когда координаты разбиты по трём разным ячейкам
-
-    possible_sizes = [3, 1]
-    
-    for size_from in possible_sizes:
-        # Проверяем, чтобы размер "Откуда" не превышал общее количество ячеек
-        if size_from > (end_idx - start_idx):
-            continue
+    # =========================================================
+    # СЛУЧАЙ 1: 2 ячейки (1+1)
+    # =========================================================
+    if num_cells == 2:
+        # Первая ячейка — "Откуда"
+        rooms_f, equip_f, coords_f = parse_kks_block([block_cells[0]], building_bounds)
+        # Вторая ячейка — "Куда"
+        rooms_t, equip_t, coords_t = parse_kks_block([block_cells[1]], building_bounds)
         
-        # ------------------------------------------------------------------
-        # РАЗБИЕНИЕ ЯЧЕЕК НА ДВЕ ГРУППЫ
-        # ------------------------------------------------------------------
-        # from_cells — ячейки, которые мы ОТНОСИМ к блоку "Откуда"
-        # Берём первые size_from ячеек от start_idx
-        from_cells = input_row[start_idx:start_idx+size_from]
+        list_of_KKS_start = rooms_f
+        list_of_KKS_equipment_start = equip_f
+        list_of_axis_start = coords_f if len(coords_f) == 3 else []
         
-        # to_cells — оставшиеся ячейки, которые мы ОТНОСИМ к блоку "Куда"
-        # Берём все ячейки от start_idx+size_from до end_idx
-        to_cells = input_row[start_idx+size_from:end_idx]
+        list_of_KKS_end = rooms_t
+        list_of_KKS_equipment_end = equip_t
+        list_of_axis_end = coords_t if len(coords_t) == 3 else []
+    
+    # =========================================================
+    # СЛУЧАЙ 2: 6 ячеек (3+3)
+    # =========================================================
+    elif num_cells == 6:
+        # Первые три ячейки — "Откуда"
+        rooms_f, equip_f, coords_f = parse_kks_block(block_cells[:3], building_bounds)
+        # Вторые три ячейки — "Куда"
+        rooms_t, equip_t, coords_t = parse_kks_block(block_cells[3:], building_bounds)
         
-        # Если блок "Куда" пустой, этот вариант не подходит
-        if not to_cells:
-            continue
-
-        # ------------------------------------------------------------------
-        # ПАРСИНГ ОБОИХ БЛОКОВ
-        # ------------------------------------------------------------------
-
-        rooms_f, equip_f, coords_f = parse_kks_block(from_cells, building_bounds)
-        rooms_t, equip_t, coords_t = parse_kks_block(to_cells, building_bounds)
-
-        # ------------------------------------------------------------------
-        # ПРОВЕРКА: ПОДХОДИТ ЛИ ЭТОТ ВАРИАНТ?
-        # ------------------------------------------------------------------
-        # Вариант считается подходящим, если в ОБОИХ блоках есть хотя бы:
-        #   - одно помещение, ИЛИ
-        #   - одно оборудование, ИЛИ
-        #   - хотя бы одна координата (не все три пустые)
-        # 
-        # Почему это важно?
-        # Если один из блоков полностью пустой (нет ни KKS, ни координат),
-        # значит мы неправильно разбили ячейки.
-        # Например, если "Откуда" занимает 1 ячейку, но на самом деле должно занимать 3,
-        # то блок "Куда" может оказаться пустым, и мы этот вариант отбросим.
+        list_of_KKS_start = rooms_f
+        list_of_KKS_equipment_start = equip_f
+        list_of_axis_start = coords_f if len(coords_f) == 3 else []
         
-        if (rooms_f or equip_f or any(coords_f)) and (rooms_t or equip_t or any(coords_t)):
-            # Сохраняем этот вариант в "best" переменные
-            best_rooms_from, best_equip_from, best_coords_from = rooms_f, equip_f, coords_f
-            best_rooms_to, best_equip_to, best_coords_to = rooms_t, equip_t, coords_t
-            break   # Выходим из цикла: первый подходящий вариант считаем правильным
+        list_of_KKS_end = rooms_t
+        list_of_KKS_equipment_end = equip_t
+        list_of_axis_end = coords_t if len(coords_t) == 3 else []
     
-    # ------------------------------------------------------------------
-    # ЗАПАСНОЙ ВАРИАНТ: ЕСЛИ НИ ОДИН ВАРИАНТ НЕ ПОДОШЁЛ
-    # ------------------------------------------------------------------
-    # Это может случиться, если:
-    #   - возможные размеры не подходят (например, реальный размер блока "Откуда" = 2)
-    #   - или "Куда" отсутствует (весь диапазон — это только "Откуда")
-    # 
-    # В этом случае считаем, что ВСЕ ячейки от start_idx до end_idx относятся
-    # к блоку "Откуда", а блок "Куда" пустой.
-    
-    if not best_rooms_from and not best_equip_from and not any(best_coords_from):
-        from_cells = input_row[start_idx:end_idx]
-        best_rooms_from, best_equip_from, best_coords_from = parse_kks_block(from_cells, building_bounds)
-        # best_rooms_to, best_equip_to, best_coords_to остаются пустыми
-    
+    # =========================================================
+    # СЛУЧАЙ 3: 4 ячейки (1+3 или 3+1)
+    # =========================================================
+    elif num_cells == 4:
+        
 
-    # ------------------------------------------------------------------
-    # СОХРАНЕНИЕ РЕЗУЛЬТАТОВ В ИТОГОВЫЕ ПЕРЕМЕННЫЕ
-    # ------------------------------------------------------------------
-
-    list_of_KKS_start = best_rooms_from
-    list_of_KKS_equipment_start = best_equip_from
-    # list_of_axis_start — координаты для блока "Откуда" (если ровно 3)
-    list_of_axis_start = best_coords_from if len(best_coords_from) == 3 else []
+        def cell_has_full_data(cell):
+            """
+            Проверяет, содержит ли ячейка (один список) все три координаты (X,Y,Z).
+            KKS помещения и оборудования могут отсутствовать — это допустимо.
+            
+            Возвращает True, если найдены три координаты (не пустые строки).
+            """
+            # Парсим ячейку
+            _, _, coords = parse_kks_block([cell], building_bounds)
+            
+            # Проверяем: есть ли три координаты (все три не пустые строки)
+            # Или хотя бы три элемента (могут быть пустыми?)
+            # Координата считается найденной, если это число (не пустая строка)
+            has_three_coords = len(coords) == 3 and all(c != '' for c in coords)
+            
+            return has_three_coords
+        
+        # -------------------------------------------------
+        # ВАРИАНТ А: первая ячейка содержит все данные = "Откуда"
+        # -------------------------------------------------
+        if cell_has_full_data(block_cells[0]):
+            # Первая ячейка — "Откуда" (содержит всё)
+            rooms_f, equip_f, coords_f = parse_kks_block([block_cells[0]], building_bounds)
+            # Остальные три ячейки — "Куда" (каждая с одной координатой)
+            rooms_t, equip_t, coords_t = parse_kks_block(block_cells[1:4], building_bounds)
+            
+            list_of_KKS_start = rooms_f
+            list_of_KKS_equipment_start = equip_f
+            list_of_axis_start = coords_f if len(coords_f) == 3 else []
+            
+            list_of_KKS_end = rooms_t
+            list_of_KKS_equipment_end = equip_t
+            list_of_axis_end = coords_t if len(coords_t) == 3 else []
+        
+        # -------------------------------------------------
+        # ВАРИАНТ Б: последняя ячейка содержит все данные = "Куда"
+        # -------------------------------------------------
+        elif cell_has_full_data(block_cells[-1]):
+            # Первые три ячейки — "Откуда" (каждая с одной координатой)
+            rooms_f, equip_f, coords_f = parse_kks_block(block_cells[:3], building_bounds)
+            # Последняя ячейка — "Куда" (содержит всё)
+            rooms_t, equip_t, coords_t = parse_kks_block([block_cells[-1]], building_bounds)
+            
+            list_of_KKS_start = rooms_f
+            list_of_KKS_equipment_start = equip_f
+            list_of_axis_start = coords_f if len(coords_f) == 3 else []
+            
+            list_of_KKS_end = rooms_t
+            list_of_KKS_equipment_end = equip_t
+            list_of_axis_end = coords_t if len(coords_t) == 3 else []
+        
+        # -------------------------------------------------
+        # Если не удалось определить — используем старый метод (перебор)
+        # -------------------------------------------------
+        else:
+            # Запасной вариант: пытаемся определить по старой логике
+            best_rooms_from = []
+            best_equip_from = []
+            best_coords_from = []
+            best_rooms_to = []
+            best_equip_to = []
+            best_coords_to = []
+            
+            for size_from in [1, 3]:
+                if size_from > num_cells:
+                    continue
+                from_cells = block_cells[:size_from]
+                to_cells = block_cells[size_from:]
+                if not to_cells:
+                    continue
+                
+                rooms_f, equip_f, coords_f = parse_kks_block(from_cells, building_bounds)
+                rooms_t, equip_t, coords_t = parse_kks_block(to_cells, building_bounds)
+                
+                if (rooms_f or equip_f or any(coords_f)) and (rooms_t or equip_t or any(coords_t)):
+                    best_rooms_from, best_equip_from, best_coords_from = rooms_f, equip_f, coords_f
+                    best_rooms_to, best_equip_to, best_coords_to = rooms_t, equip_t, coords_t
+                    break
+            
+            list_of_KKS_start = best_rooms_from
+            list_of_KKS_equipment_start = best_equip_from
+            list_of_axis_start = best_coords_from if len(best_coords_from) == 3 else []
+            
+            list_of_KKS_end = best_rooms_to
+            list_of_KKS_equipment_end = best_equip_to
+            list_of_axis_end = best_coords_to if len(best_coords_to) == 3 else []
     
-    # Аналогично для блока "Куда"
-    list_of_KKS_end = best_rooms_to
-    list_of_KKS_equipment_end = best_equip_to
-    list_of_axis_end = best_coords_to if len(best_coords_to) == 3 else []
+    # =========================================================
+    # СЛУЧАЙ 4: другое количество ячеек (запасной вариант)
+    # =========================================================
+    else:
+        # Используем старый метод перебора для всех остальных случаев
+        best_rooms_from = []
+        best_equip_from = []
+        best_coords_from = []
+        best_rooms_to = []
+        best_equip_to = []
+        best_coords_to = []
+        
+        # Перебираем возможные размеры
+        for size_from in [1, 3]:
+            if size_from > num_cells:
+                continue
+            from_cells = block_cells[:size_from]
+            to_cells = block_cells[size_from:]
+            if not to_cells:
+                continue
+            
+            rooms_f, equip_f, coords_f = parse_kks_block(from_cells, building_bounds)
+            rooms_t, equip_t, coords_t = parse_kks_block(to_cells, building_bounds)
+            
+            if (rooms_f or equip_f or any(coords_f)) and (rooms_t or equip_t or any(coords_t)):
+                best_rooms_from, best_equip_from, best_coords_from = rooms_f, equip_f, coords_f
+                best_rooms_to, best_equip_to, best_coords_to = rooms_t, equip_t, coords_t
+                break
+        
+        # Если не нашли подходящий вариант, берём всё как "Откуда"
+        if not best_rooms_from and not best_equip_from and not any(best_coords_from):
+            rooms_f, equip_f, coords_f = parse_kks_block(block_cells, building_bounds)
+            list_of_KKS_start = rooms_f
+            list_of_KKS_equipment_start = equip_f
+            list_of_axis_start = coords_f if len(coords_f) == 3 else []
+        else:
+            list_of_KKS_start = best_rooms_from
+            list_of_KKS_equipment_start = best_equip_from
+            list_of_axis_start = best_coords_from if len(best_coords_from) == 3 else []
+            
+            list_of_KKS_end = best_rooms_to
+            list_of_KKS_equipment_end = best_equip_to
+            list_of_axis_end = best_coords_to if len(best_coords_to) == 3 else []
     
-    # Удаляем дубликаты (в одном блоке может встретиться один и тот же KKS несколько раз)
+    # =========================================================
+    # Удаляем дубликаты
+    # =========================================================
     list_of_KKS_start = list(set(list_of_KKS_start))
     list_of_KKS_end = list(set(list_of_KKS_end))
     list_of_KKS_equipment_start = list(set(list_of_KKS_equipment_start))
     list_of_KKS_equipment_end = list(set(list_of_KKS_equipment_end))
+
 
 
     # ========== 8. ЗАПОЛНЕНИЕ ПОЛЕЙ ==========
