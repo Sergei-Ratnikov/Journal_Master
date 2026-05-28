@@ -1,9 +1,13 @@
+# main.py
 import time
-from base_master import base_master_start
+from excel_utils import build_cable_database
 
 start_time = time.time()
 
-base_master_start('C:/Users/User/Documents/Python/WordWorks/Исходники', 'C:/Users/User/Documents/Python/WordWorks/Исходники')
+build_cable_database(
+    journals_dir='C:/Python/WordWorks/Well',
+    output_dir='C:/Python/WordWorks/Well'
+)
 
 end_time = time.time()    
 duration = end_time - start_time

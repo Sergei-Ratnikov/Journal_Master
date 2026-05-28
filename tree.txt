@@ -1,0 +1,34 @@
+Проект/
+├── main.py                    # точка входа
+├── config.py                  # константы, регулярки, HEADERS
+├── doc_utils.py               # работа с Word (извлечение таблиц)
+├── kks_utils.py               # KKS и координаты
+├── cable_parser.py            # row_parser и парсинг строки
+├── excel_utils.py             # создание базы, версионирование, перенос
+├── KKS_building_bounds.json   # границы зданий (данные)
+│
+├── Исходники/           # папка с журналами
+│   ├── *.docx
+│   ├── *.doc
+│   └── doc files/       # создаётся автоматически
+│
+└── Cable base ver.X.xlsx # создаётся автоматически
+
+
+структура импортов
+
+cable_parser.py
+    ├── imports: re, config, kks_utils
+    └── defines: make_hashable, is_subset_with_lists, all_deep_empty, get_mismatch_indices, row_parser
+
+doc_utils.py
+    ├── imports: os, shutil, re, win32com, Path, Document, config
+    └── imports from cable_parser: all_deep_empty, get_mismatch_indices, is_subset_with_lists
+
+excel_utils.py
+    ├── imports: json, openpyxl, Path, date, Document, tqdm
+    ├── imports from doc_utils: take_all_docx_from_dir, extract_all_text_from_docx
+    └── imports from cable_parser: row_parser
+
+main.py
+    └── imports from excel_utils: build_cable_database

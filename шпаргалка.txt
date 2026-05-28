@@ -1,0 +1,9 @@
+git add .
+git commit -m "text"
+git push
+git push --force origin master - если есть расхождениЯ, но я уверен, что у меня последняя версия
+git clone https://
+
+В cmd:
+tree /F
+древовидная структура, показывает структуру папок файлы внутри папок
