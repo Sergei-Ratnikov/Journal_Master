@@ -18,7 +18,6 @@ from doc_utils import take_all_docx_from_dir, extract_all_text_from_docx
 from cable_parser import row_parser
 import config
 
-# ----- функция для поиска актуальной версии базы -----
 
 def current_version_finder(dir_in, b_name='Cable base ver.'):
     """
@@ -47,7 +46,6 @@ def current_version_finder(dir_in, b_name='Cable base ver.'):
     
     return current_version
 
-# ----- функция для удаления "+" из координат -----
 
 def remove_plus_from_numbers(obj):
     """
@@ -57,24 +55,22 @@ def remove_plus_from_numbers(obj):
     if isinstance(obj, list):
         return [remove_plus_from_numbers(item) for item in obj]
     elif isinstance(obj, str):
-        # Если строка начинается с '+' и далее число (возможно с десятичной точкой или запятой)
         if obj.startswith('+') and re.match(r'^\+\d+(?:[.,]\d+)?$', obj):
-            return obj[1:]   # удаляем '+'
+            return obj[1:]
         else:
             return obj
     else:
         return obj
 
 
-# ----- основная функция создания базы -----
-
-def build_cable_database(journals_dir, output_dir):
+def build_cable_database(journals_dir, output_dir, progress_callback=None):
     """
     Создаёт кабельную базу из журналов в указанной папке.
     
     Args:
         journals_dir: папка с журналами (.doc, .docx)
         output_dir: папка, в которую будет сохранена новая база
+        progress_callback: функция для обновления прогресса (принимает current, total, message)
     """
     print("\nЗапуск build_cable_database...")
 
@@ -89,6 +85,11 @@ def build_cable_database(journals_dir, output_dir):
     # Получение списка всех журналов (.doc и .docx)
     journals = take_all_docx_from_dir(journals_dir)
     journals_names = [j.stem for j in journals] if journals else []
+    total_journals = len(journals)
+    
+    # Отчёт о прогрессе: найдено журналов
+    if progress_callback:
+        progress_callback(0, total_journals, f"Найдено {total_journals} журналов")
 
     # Создание новой базы
     wb = Workbook()
@@ -116,32 +117,40 @@ def build_cable_database(journals_dir, output_dir):
             sheetRead = rb.active
 
             rows_to_copy = []
-            # переносятся только журналы, которых нет среди новых журналов
             for idx, row in enumerate(sheetRead.iter_rows(min_row=2, values_only=True), start=2):
                 journal_name = str(row[0]) if row[0] else ''
                 if journal_name and journal_name not in journals_names:
                     rows_to_copy.append(row)
 
-            print(f"\n📦 Перенос данных из предыдущей версии ({old_path.name})...")
-            with tqdm(total=len(rows_to_copy), desc="Копирование", unit="строка") as pbar:
-                for row_data in rows_to_copy:
-                    for col_idx, value in enumerate(row_data, start=1):
-                        sheetWrite.cell(row=rowWrite, column=col_idx, value=value)
-                    rowWrite += 1
-                    pbar.update(1)
+            total_old = len(rows_to_copy)
+            if progress_callback:
+                progress_callback(0, total_journals + total_old, f"Перенос старых записей (всего {total_old})")
+            
+            for i, row_data in enumerate(rows_to_copy):
+                for col_idx, value in enumerate(row_data, start=1):
+                    sheetWrite.cell(row=rowWrite, column=col_idx, value=value)
+                rowWrite += 1
+                if progress_callback and i % 10 == 0:
+                    progress_callback(i, total_journals + total_old, f"Перенос старых записей: {i}/{total_old}")
 
     # ----- Обработка новых журналов -----
     if journals:
-        print("\nОбработка журналов...")
-        for journal in tqdm(journals, desc="Обработка", unit="журнал"):
+        if progress_callback:
+            progress_callback(0, total_journals, "Начало обработки журналов")
+        
+        for i, journal in enumerate(journals):
             try:
-                # Извлечение содержимого таблиц из документа
+                if progress_callback:
+                    progress_callback(i, total_journals, f"Обработка: {journal.stem}")
+                
                 j_raw_content = extract_all_text_from_docx(Document(journal))
                 if not j_raw_content:
+                    if progress_callback:
+                        progress_callback(i, total_journals, f"Нет данных в {journal.stem}")
                     continue
                 
+                rows_processed = 0
                 for raw_row in j_raw_content:
-                    # Предобработка: удаляем '+' из чисел
                     raw_row = remove_plus_from_numbers(raw_row)
                     
                     if len(raw_row) > 6:
@@ -149,38 +158,72 @@ def build_cable_database(journals_dir, output_dir):
                         processed_row = row_parser(raw_row, building_bounds)
 
                     if processed_row:
-                        # Добавляем дату и версию
                         processed_row.append(date_string)
                         processed_row.append(current_version)
                         
-                        # Записываем основные данные
                         for idx, val in enumerate(processed_row, start=1):
                             sheetWrite.cell(row=rowWrite, column=idx, value=val)
                         
-                        # Сырая строка (Raw) — в столбец AD (индекс 30, если считать с 0)
                         sheetWrite.cell(row=rowWrite, column=30, value=str(raw_row))
                         
                         # Расчёт минимальной длины кабеля
                         try:
-                            length = float(processed_row[7])
-                            xyz_from = [float(processed_row[11]), float(processed_row[12]), float(processed_row[13])]
-                            xyz_to = [float(processed_row[16]), float(processed_row[17]), float(processed_row[18])]
-                            min_len = round(abs(xyz_from[0] - xyz_to[0]) + abs(xyz_from[1] - xyz_to[1]) + abs(xyz_from[2] - xyz_to[2]))
+                            # Функция для преобразования координаты (замена запятой на точку)
+                            def to_float(val):
+                                if not val:
+                                    return None
+                                return float(str(val).replace(',', '.'))
+                            
+                            length = processed_row[7]
+                            if not length:
+                                raise ValueError("Нет длины")
+                            
+                            length_val = float(length)
+                            
+                            from_x = to_float(processed_row[11])
+                            from_y = to_float(processed_row[12])
+                            from_z = to_float(processed_row[13])
+                            to_x = to_float(processed_row[16])
+                            to_y = to_float(processed_row[17])
+                            to_z = to_float(processed_row[18])
+                            
+                            # Проверяем, что все координаты есть
+                            if None in (from_x, from_y, from_z, to_x, to_y, to_z):
+                                raise ValueError("Не все координаты")
+                            
+                            min_len = round(
+                                abs(from_x - to_x) + 
+                                abs(from_y - to_y) + 
+                                abs(from_z - to_z)
+                            )
+                            
                             sheetWrite.cell(row=rowWrite, column=31, value=min_len)
-                            if length < min_len:
+                            
+                            if length_val < min_len:
                                 sheetWrite.cell(row=rowWrite, column=32, value='ДА')
-                        except Exception as e:
+                                
+                        except Exception:
                             # Если что-то пошло не так — просто пропускаем
                             pass
                         
                         rowWrite += 1
+                        rows_processed += 1
+
+                if progress_callback:
+                    progress_callback(i + 1, total_journals, f"Готово: {journal.stem} ({rows_processed} строк)")
 
             except Exception as e:
                 print(f"Ошибка обработки {journal.stem}: {e}")
+                if progress_callback:
+                    progress_callback(i + 1, total_journals, f"Ошибка в {journal.stem}: {str(e)[:50]}", is_error=True)
     
     # Применяем автофильтр и сохраняем
     sheetWrite.auto_filter.ref = sheetWrite.dimensions
     output_path = Path(output_dir) / f"{b_name}{current_version}.xlsx"
     wb.save(output_path)
+    
+    if progress_callback:
+        progress_callback(total_journals, total_journals, "Сохранение базы данных")
+    
     print(f"\n✅ База данных сохранена: {output_path}")
     print("🏁 Готово!")

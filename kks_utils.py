@@ -201,30 +201,49 @@ def parse_coordinate_pair(x_str, y_str):
 
 def check_and_swap_axes(x, y, bounds, tolerance=100):
     """
-    Проверяет, не перепутаны ли оси X и Y.
-    Если координаты не попадают в границы здания, пытается поменять их местами.
+    Проверяет, не перепутаны ли оси X и Y, используя границы здания как эталон.
+    
+    Логика:
+        1. Если здание найдено и границы валидны:
+           - Если x_min < y_min → ожидаем, что x < y. Если x > y → меняем местами
+           - Если x_min > y_min → ожидаем, что x > y. Если x < y → меняем местами
+        2. Если здание не найдено или границы невалидны:
+           - По умолчанию ожидаем, что x < y. Если x > y → меняем местами
     
     Args:
         x, y: координаты для проверки
         bounds: словарь с границами здания (x_min, x_max, y_min, y_max)
-        tolerance: допуск отклонения от границ
+        tolerance: допуск отклонения от границ (не используется в этой версии, 
+                   оставлен для совместимости)
     
     Returns:
         tuple: (x, y) — возможно, исправленные координаты
     """
-    if not bounds or not bounds.get('is_valid'):
+    
+    # Случай 1: здание найдено и границы валидны
+    if bounds and bounds.get('is_valid'):
+        x_min = bounds['x_min']
+        y_min = bounds['y_min']
+        
+        # Определяем ожидаемое соотношение осей по эталону здания
+        if x_min < y_min:
+            # В этом здании X должен быть меньше Y
+            if x > y:
+                # print(f"Обнаружены перепутанные координаты: X({x}) > Y({y}), а должно быть X < Y (по эталону здания). Меняем местами.")
+                return y, x
+        elif x_min > y_min:
+            # В этом здании X должен быть больше Y
+            if x < y:
+                # print(f"Обнаружены перепутанные координаты: X({x}) < Y({y}), а должно быть X > Y (по эталону здания). Меняем местами.")
+                return y, x
+        # Если x_min == y_min — не меняем
+        
         return x, y
     
-    def in_range(val, min_val, max_val):
-        return (min_val - tolerance) <= val <= (max_val + tolerance)
-    
-    x_fits = in_range(x, bounds['x_min'], bounds['x_max'])
-    y_fits = in_range(y, bounds['y_min'], bounds['y_max'])
-    
-    if x_fits and y_fits:
-        return x, y
-    elif in_range(y, bounds['x_min'], bounds['x_max']) and in_range(x, bounds['y_min'], bounds['y_max']):
-        # print("Обнаружены перепутанные координаты: X и Y поменяны местами.")
+    # Случай 2: здание не найдено или границы невалидны
+    # По умолчанию ожидаем, что X < Y
+    if x > y:
+        # print(f"Эвристика: X({x}) > Y({y}) — меняем местами (здание не найдено или нет границ)")
         return y, x
     
     return x, y

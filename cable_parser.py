@@ -282,6 +282,7 @@ def parse_kks_block(block_cells, building_bounds):
             # Теперь block_cells - это плоский список, и мы перейдём к обработке (БЛОК Б)
         
 
+
         # ---------------------------------------------------------
         # СЛУЧАЙ 2: ТРИ ОТДЕЛЬНЫХ СПИСКА (три ячейки)
         # ---------------------------------------------------------
@@ -315,7 +316,6 @@ def parse_kks_block(block_cells, building_bounds):
                 equip_per_cell.append(cell_equip)
             
             # Проверяем, что KKS помещений одинаковы во всех ячейках
-            # (или пустые во всех)
             rooms_consistent = True
             first_rooms = rooms_per_cell[0] if rooms_per_cell else set()
             for rooms_set in rooms_per_cell[1:]:
@@ -331,12 +331,8 @@ def parse_kks_block(block_cells, building_bounds):
                     equip_consistent = False
                     break
             
-            # Если KKS не совпадают во всех ячейках, это означает,
-            # что в блок попали данные из разных мест.
-            # В этом случае возвращаем пустые результаты (блок будет обработан по-другому).
+            # Если KKS не совпадают во всех ячейках, возвращаем пустые результаты
             if not rooms_consistent or not equip_consistent:
-                # Проблема: смешанные данные из "Откуда" и "Куда"
-                # Возвращаем пустые значения, чтобы вышестоящий код попробовал другое разбиение
                 return [], [], ['', '', '']
             
             # =========================================================
@@ -351,7 +347,6 @@ def parse_kks_block(block_cells, building_bounds):
                     cell = [cell]
                 
                 # --- ПОИСК КООРДИНАТЫ В ЭТОЙ ЯЧЕЙКЕ ---
-                # Координата может быть ТОЛЬКО первым или последним элементом списка
                 coord_value = ''
                 if cell and cell[0] == '-':
                     coord_value = ''
@@ -367,15 +362,90 @@ def parse_kks_block(block_cells, building_bounds):
                 if i < 3:
                     coords[i] = coord_value
                 
+
                 # --- ИЗВЛЕЧЕНИЕ KKS ИЗ ЭТОЙ ЯЧЕЙКИ ---
+                # Алгоритм:
+                #   1) Проверяем исходный элемент целиком (без изменений).
+                #   2) Если не найдено, применяем cleanCyrFromLat (замена русских букв на латинские)
+                #      и повторяем проверку.
+                #   3) Если всё ещё не найдено, разбиваем строку на слова и проверяем каждое слово
+                #      (сначала исходное, потом очищенное).
+                #
+                # Такой подход позволяет находить KKS даже с русскими буквами (например, '00BСA00')
+                # или внутри текста ('00CFL01 Стойка...').
+                
                 for elem in cell:
+                    if elem == coord_value:
+                        continue
+
+                    found = False
+
+                    # ---------- ШАГ 1: проверка исходного элемента ----------
                     if config.regular_KKS_room.search(elem):
                         all_rooms.add(elem)
+                        found = True
                     elif config.regular_KKS_building.search(elem):
                         all_rooms.add(elem)
+                        found = True
                     elif config.regular_KKS_equipment.search(elem):
                         all_equip.add(elem)
-            
+                        found = True
+                    
+                    # ---------- ШАГ 2: если не нашли, очищаем от русских букв и пробуем снова ----------
+                    if not found:
+                        elem_clean = cleanCyrFromLat(elem)   # заменяем русские буквы на латинские
+                        if elem_clean != elem:               # если строка изменилась (были русские буквы)
+                            if config.regular_KKS_room.search(elem_clean):
+                                all_rooms.add(elem_clean)
+                                found = True
+                            elif config.regular_KKS_building.search(elem_clean):
+                                all_rooms.add(elem_clean)
+                                found = True
+                            elif config.regular_KKS_equipment.search(elem_clean):
+                                all_equip.add(elem_clean)
+                                found = True
+                    
+                    # ---------- ШАГ 3: если не нашли, разбиваем на слова и проверяем каждое слово ----------
+                    if not found:
+                        # Разделители: пробелы, запятые, точки с запятой, скобки, слеши, дефис
+                        words = re.split(r'[\s,;()\[\]{}/\\-]+', str(elem))
+                        for word in words:
+                            word = word.strip()
+                            if not word:
+                                continue
+                            
+                            # 3.1 Проверяем исходное слово
+                            if config.regular_KKS_room.search(word):
+                                all_rooms.add(word)
+                                found = True
+                                break
+                            elif config.regular_KKS_building.search(word):
+                                all_rooms.add(word)
+                                found = True
+                                break
+                            elif config.regular_KKS_equipment.search(word):
+                                all_equip.add(word)
+                                found = True
+                                break
+                            
+                            # 3.2 Если не нашли, пробуем очищенное слово
+                            word_clean = cleanCyrFromLat(word)
+                            if word_clean != word:
+                                if config.regular_KKS_room.search(word_clean):
+                                    all_rooms.add(word_clean)
+                                    found = True
+                                    break
+                                elif config.regular_KKS_building.search(word_clean):
+                                    all_rooms.add(word_clean)
+                                    found = True
+                                    break
+                                elif config.regular_KKS_equipment.search(word_clean):
+                                    all_equip.add(word_clean)
+                                    found = True
+                                    break
+                    
+                    # Если после всех попыток ничего не найдено, элемент игнорируется
+
             return list(all_rooms), list(all_equip), coords
 
 
@@ -398,25 +468,71 @@ def parse_kks_block(block_cells, building_bounds):
         #   coords = ['1779.1', '1756.3', '13.9']
 
         
-
         # ---------------------------------------------------------
-        # ШАГ 2: ИЗВЛЕЧЕНИЕ KKS ИЗ ОСТАВШИХСЯ ЭЛЕМЕНТОВ
+        # ШАГ 2: ИЗВЛЕЧЕНИЕ KKS ИЗ ЭЛЕМЕНТОВ
         # ---------------------------------------------------------
         rooms = set()
         equip = set()
         
-        # Перебираем отфильтрованный список (без координат)
         for elem in block_cells:
-            # 1. KKS помещения
+            # Пропускаем координаты (они уже извлечены)
+            # Но можно просто проверять все элементы, регулярки сами отсеют числа
+            
+            found = False
+            
+            # --- проверка исходного элемента ---
             if config.regular_KKS_room.search(elem):
                 rooms.add(elem)
-            # 2. KKS здания
+                found = True
             elif config.regular_KKS_building.search(elem):
-                rooms.add(elem)      # здание тоже считаем "помещением"
-            # 3. KKS оборудования
+                rooms.add(elem)
+                found = True
             elif config.regular_KKS_equipment.search(elem):
                 equip.add(elem)
-            # Остальное (текстовые описания) игнорируем
+                found = True
+            
+            # --- если не нашли, пробуем очищенный ---
+            if not found:
+                elem_clean = cleanCyrFromLat(elem)
+                if elem_clean != elem:
+                    if config.regular_KKS_room.search(elem_clean):
+                        rooms.add(elem_clean)
+                        found = True
+                    elif config.regular_KKS_building.search(elem_clean):
+                        rooms.add(elem_clean)
+                        found = True
+                    elif config.regular_KKS_equipment.search(elem_clean):
+                        equip.add(elem_clean)
+                        found = True
+            
+            # --- если всё ещё не нашли, разбиваем на слова ---
+            if not found:
+                words = re.split(r'[\s,;()\[\]{}/\\-]+', str(elem))
+                for word in words:
+                    word = word.strip()
+                    if not word:
+                        continue
+                    if config.regular_KKS_room.search(word):
+                        rooms.add(word)
+                        break
+                    elif config.regular_KKS_building.search(word):
+                        rooms.add(word)
+                        break
+                    elif config.regular_KKS_equipment.search(word):
+                        equip.add(word)
+                        break
+                    
+                    word_clean = cleanCyrFromLat(word)
+                    if word_clean != word:
+                        if config.regular_KKS_room.search(word_clean):
+                            rooms.add(word_clean)
+                            break
+                        elif config.regular_KKS_building.search(word_clean):
+                            rooms.add(word_clean)
+                            break
+                        elif config.regular_KKS_equipment.search(word_clean):
+                            equip.add(word_clean)
+                            break
 
         # ---------------------------------------------------------
         # ШАГ 3: ВОЗВРАТ РЕЗУЛЬТАТА

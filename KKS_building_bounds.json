@@ -4678,5 +4678,21 @@
     "x_max": 1300,
     "y_min": 1200,
     "y_max": 1300
+  },
+  "05UYP": {
+    "is_valid": false,
+    "original": "",
+    "x_min": null,
+    "x_max": null,
+    "y_min": null,
+    "y_max": null
+  },
+  "09UBG": {
+    "is_valid": false,
+    "original": "",
+    "x_min": null,
+    "x_max": null,
+    "y_min": null,
+    "y_max": null
   }
 }
