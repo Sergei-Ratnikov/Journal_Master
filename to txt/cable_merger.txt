@@ -1,0 +1,216 @@
+# cable_merger.py
+"""
+Объединение кабелей, разбитых на отрезки, по совпадающему ККС.
+"""
+
+import re
+import openpyxl
+from openpyxl import load_workbook, Workbook
+from pathlib import Path
+from collections import defaultdict
+import config
+
+
+def get_column_index(header_name):
+    """Возвращает индекс колонки по её названию из config.HEADERS"""
+    for idx, name, width in config.HEADERS:
+        if name == header_name:
+            return idx
+    raise ValueError(f"Колонка '{header_name}' не найдена")
+
+
+# Индексы колонок
+COL_JOURNAL = get_column_index('Журнал')
+COL_CABLE_NUM = get_column_index('Номер кабеля')
+COL_KKS = get_column_index('ККС')
+COL_GROUP = get_column_index('Группа')
+COL_MARK = get_column_index('Марка')
+COL_SECTION = get_column_index('Сечение')
+COL_LENGTH = get_column_index('Длина')
+COL_TRACE = get_column_index('Трасса')
+COL_FROM_ROOM = get_column_index('Откуда помещение')
+COL_FROM_EQUIP = get_column_index('Откуда оборудование')
+COL_TO_ROOM = get_column_index('Куда помещение')
+COL_TO_EQUIP = get_column_index('Куда оборудование')
+COL_MERGE_STATUS = get_column_index('Статус объединения')
+
+
+def parse_float(value):
+    """Преобразует строку с запятой или точкой в float"""
+    if value is None:
+        return 0.0
+    s = str(value).strip()
+    if s == '':
+        return 0.0
+    s = s.replace(',', '.')
+    try:
+        return float(s)
+    except:
+        return 0.0
+
+
+def get_building(kks_room):
+    """Извлекает код здания из KKS помещения (две цифры и три буквы)"""
+    if not kks_room:
+        return ''
+    match = re.match(r'(\d{2}[A-Z]{3})', str(kks_room))
+    return match.group(1) if match else ''
+
+
+def can_merge(row1, row2):
+    """
+    Проверяет, можно ли объединить два кабеля.
+    Условия:
+        1. Одинаковая группа и сечение
+        2. Одинаковое оборудование (откуда, куда) ИЛИ одинаковое здание (откуда, куда)
+    """
+    # Группа и сечение
+    if row1[COL_GROUP] != row2[COL_GROUP]:
+        return False
+    if row1[COL_SECTION] != row2[COL_SECTION]:
+        return False
+    
+    # Оборудование
+    equip1 = {row1[COL_FROM_EQUIP], row1[COL_TO_EQUIP]}
+    equip2 = {row2[COL_FROM_EQUIP], row2[COL_TO_EQUIP]}
+    if equip1 == equip2:
+        return True
+    
+    # Здание
+    building1 = {get_building(row1[COL_FROM_ROOM]), get_building(row1[COL_TO_ROOM])}
+    building2 = {get_building(row2[COL_FROM_ROOM]), get_building(row2[COL_TO_ROOM])}
+    if building1 == building2:
+        return True
+    return False
+
+
+def merge_cables_group(group_rows, sheet_merged, sheet_duplicate):
+    """
+    Объединяет группу кабелей в один.
+    group_rows: список строк с одинаковым ККС
+    """
+    # Проверяем, что все кабели в группе можно объединить
+    first = group_rows[0]
+    for row in group_rows[1:]:
+        if not can_merge(first, row):
+            # Несовместимы — отправляем в задвоение
+            for r in group_rows:
+                sheet_duplicate.append(r)
+            return
+    
+    # Суммируем длины
+    total_length = sum(parse_float(row[COL_LENGTH]) for row in group_rows)
+    
+    # Объединяем трассы
+    traces = [str(row[COL_TRACE]).strip() for row in group_rows if row[COL_TRACE]]
+    merged_trace = '; '.join(traces) if traces else ''
+    
+    # Создаём новый кабель на основе первого
+    new_row = group_rows[0].copy()
+    new_row[COL_JOURNAL] = '-'
+    new_row[COL_CABLE_NUM] = ''
+    new_row[COL_LENGTH] = total_length
+    new_row[COL_TRACE] = merged_trace
+    new_row[COL_MERGE_STATUS] = 'Объединён'
+    
+    # Очищаем координаты и KKS (оставляем только основные поля)
+    for idx in range(COL_FROM_ROOM, COL_TO_EQUIP + 1):
+        new_row[idx] = ''
+    
+    # Записываем результаты
+    for row in group_rows:
+        sheet_merged.append(row)
+    sheet_merged.append(new_row)
+
+
+def process_cable_base(input_path, output_path):
+    """Основная функция обработки"""
+    print(f"Загрузка: {input_path}")
+    wb_in = load_workbook(input_path, data_only=True)
+    sheet_in = wb_in.active
+    
+    # Читаем заголовки
+    headers = [cell.value for cell in sheet_in[1]]
+    
+    # Читаем данные
+    data = []
+    for row in sheet_in.iter_rows(min_row=2, values_only=True):
+        if any(row):
+            data.append(list(row))
+    
+    # Группировка по ККС
+    groups = defaultdict(list)
+    for row in data:
+        kks = row[COL_KKS]
+        if kks:
+            groups[kks].append(row) 
+            #groups[kks].append(row) добавляет в словарь по kks если такой уже есть или создает новый, если еще нет
+    
+    # Создаём выходной файл
+    wb_out = Workbook()
+    wb_out.remove(wb_out.active)
+    
+    sheet_review = wb_out.create_sheet("На рассмотрение")
+    sheet_merged = wb_out.create_sheet("Объединено")
+    sheet_duplicate = wb_out.create_sheet("Задвоение KKS")
+    
+    # Копируем заголовки
+    for sheet in (sheet_review, sheet_merged, sheet_duplicate):
+        for col_idx, header in enumerate(headers, start=1):
+            sheet.cell(row=1, column=col_idx, value=header)
+    
+    # Обрабатываем группы
+    for kks, group_rows in groups.items():
+        if len(group_rows) == 1:
+            # Одиночные — на рассмотрение
+            sheet_review.append(group_rows[0])
+        else:
+            # Группы из 2+ кабелей — пытаемся объединить
+            merge_cables_group(group_rows, sheet_merged, sheet_duplicate)
+        # Добавляем пустую строку-разделитель
+        empty_row = [''] * len(headers)  # создаём пустую строку
+        sheet_review.append(empty_row)
+        sheet_merged.append(empty_row)
+        sheet_duplicate.append(empty_row)
+
+
+    wb_out.save(output_path)
+    print(f"✅ Сохранено: {output_path}")
+    
+    # Статистика
+    print(f"\n📊 Статистика:")
+    print(f"   Групп всего: {len(groups)}")
+    print(f"   Объединено: {sheet_merged.max_row - 1}")
+    print(f"   На рассмотрение: {sheet_review.max_row - 1}")
+    print(f"   Задвоение KKS: {sheet_duplicate.max_row - 1}")
+
+
+if __name__ == "__main__":
+    import tkinter as tk
+    from tkinter import filedialog, messagebox
+    
+    root = tk.Tk()
+    root.withdraw()
+    
+    input_file = filedialog.askopenfilename(
+        title="Выберите файл базы данных",
+        filetypes=[("Excel files", "*.xlsx")]
+    )
+    if not input_file:
+        print("Файл не выбран.")
+        exit()
+    
+    output_file = filedialog.asksaveasfilename(
+        title="Сохранить результат как...",
+        defaultextension=".xlsx",
+        filetypes=[("Excel files", "*.xlsx")]
+    )
+    if not output_file:
+        print("Место сохранения не выбрано.")
+        exit()
+    
+    try:
+        process_cable_base(input_file, output_file)
+        messagebox.showinfo("Готово", f"Обработка завершена!\n{output_file}")
+    except Exception as e:
+        messagebox.showerror("Ошибка", str(e))
