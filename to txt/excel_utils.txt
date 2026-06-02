@@ -22,11 +22,9 @@ import config
 def current_version_finder(dir_in, b_name='Cable base ver.'):
     """
     Находит последнюю версию кабельной базы в указанной папке.
-    
     Args:
         dir_in: путь к папке с базами
         b_name: шаблон имени базы (по умолчанию 'Cable base ver.')
-    
     Returns:
         int: номер следующей версии (текущая версия + 1)
     """
@@ -63,10 +61,82 @@ def remove_plus_from_numbers(obj):
         return obj
 
 
+def mark_merged_cables(excel_path, json_path='merged_list.json'):
+    """
+    Отмечает кабели из JSON-списка как "Объединён" в столбце 28 'Статус объединения'.
+    Args:
+        excel_path: путь к Excel-файлу базы данных
+        json_path: путь к JSON-файлу со списком KKS (по умолчанию 'merged_list.json')
+    
+    Returns:
+        int: количество отмеченных кабелей
+    """
+    # Проверяем, существует ли JSON-файл
+    json_file = Path(json_path)
+    if not json_file.exists():
+        print(f"   ⚠️ Файл {json_path} не найден. Пропуск отметки объединённых кабелей.")
+        return 0
+    
+    # Загружаем список KKS из JSON
+    try:
+        with open(json_file, 'r', encoding='utf-8') as f:
+            merged_kks_list = json.load(f)
+    except Exception as e:
+        print(f"   ⚠️ Ошибка чтения {json_path}: {e}")
+        return 0
+    
+    if not merged_kks_list:
+        print(f"   ⚠️ Файл {json_path} пуст. Пропуск отметки объединённых кабелей.")
+        return 0
+    
+    # Преобразуем список в множество для быстрого поиска
+    merged_kks_set = set(str(kks).strip() for kks in merged_kks_list if kks)
+    
+    print(f"   📋 Загружено KKS для отметки: {len(merged_kks_set)}")
+    
+    # Загружаем Excel-файл
+    wb = load_workbook(excel_path)
+    sheet = wb.active
+    
+    # Находим индекс колонки 'ККС' и 'Статус объединения'
+    kks_col = None
+    status_col = None
+    
+    for col_idx, cell in enumerate(sheet[1], start=1):
+        if cell.value and 'ККС' in str(cell.value):
+            kks_col = col_idx
+        if cell.value and 'Статус объединения' in str(cell.value):
+            status_col = col_idx
+    
+    if kks_col is None:
+        print(f"   ⚠️ Колонка 'ККС' не найдена. Пропуск отметки.")
+        return 0
+    
+    if status_col is None:
+        print(f"   ⚠️ Колонка 'Статус объединения' не найдена. Пропуск отметки.")
+        return 0
+    
+    # Проходим по всем строкам и отмечаем совпадающие KKS
+    marked_count = 0
+    for row_idx in range(2, sheet.max_row + 1):
+        kks_cell = sheet.cell(row=row_idx, column=kks_col)
+        kks_value = str(kks_cell.value).strip() if kks_cell.value else ''
+        
+        if kks_value in merged_kks_set:
+            status_cell = sheet.cell(row=row_idx, column=status_col)
+            status_cell.value = 'Объединён'
+            marked_count += 1
+    
+    # Сохраняем изменения
+    wb.save(excel_path)
+    print(f"   ✅ Отмечено кабелей как 'Объединён': {marked_count}")
+    
+    return marked_count
+
+
 def build_cable_database(journals_dir, output_dir, progress_callback=None):
     """
     Создаёт кабельную базу из журналов в указанной папке.
-    
     Args:
         journals_dir: папка с журналами (.doc, .docx)
         output_dir: папка, в которую будет сохранена новая база
@@ -149,13 +219,22 @@ def build_cable_database(journals_dir, output_dir, progress_callback=None):
                         progress_callback(i, total_journals, f"Нет данных в {journal.stem}")
                     continue
                 
-                rows_processed = 0
+                # =================================
+                # Получение ревизии
+                revision = ''
+                if 'revision_' in j_raw_content[-1]:
+                    revision = j_raw_content[-1][-3:]
+                    j_raw_content = j_raw_content[:-1]
+                # =================================
+
                 for raw_row in j_raw_content:
                     raw_row = remove_plus_from_numbers(raw_row)
                     
                     if len(raw_row) > 6:
                         raw_row.insert(0, journal.stem)
                         processed_row = row_parser(raw_row, building_bounds)
+
+                    rows_processed = 0
 
                     if processed_row:
                         processed_row.append(date_string)
@@ -201,7 +280,9 @@ def build_cable_database(journals_dir, output_dir, progress_callback=None):
                             
                             if length_val < min_len:
                                 sheetWrite.cell(row=rowWrite, column=32, value='ДА')
-                                
+                            
+                            sheetWrite.cell(row=rowWrite, column=24, value=revision)
+
                         except Exception:
                             # Если что-то пошло не так — просто пропускаем
                             pass
@@ -221,6 +302,12 @@ def build_cable_database(journals_dir, output_dir, progress_callback=None):
     sheetWrite.auto_filter.ref = sheetWrite.dimensions
     output_path = Path(output_dir) / f"{b_name}{current_version}.xlsx"
     wb.save(output_path)
+    
+    # ========== НОВЫЙ БЛОК: ОТМЕТКА ОБЪЕДИНЁННЫХ КАБЕЛЕЙ ==========
+    # Пытаемся отметить кабели из merged_list.json как "Объединён"
+    print("\n🏷️ Отметка объединённых кабелей...")
+    mark_merged_cables(output_path, 'merged_list.json')
+    # ========== КОНЕЦ НОВОГО БЛОКА ==========
     
     if progress_callback:
         progress_callback(total_journals, total_journals, "Сохранение базы данных")

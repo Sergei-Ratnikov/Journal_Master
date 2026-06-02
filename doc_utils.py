@@ -14,7 +14,6 @@ from docx import Document
 import config
 
 # ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ (общие) ==========
-# Эти функции используются для работы с вложенными списками и проверок.
 
 def make_hashable(item):
     """Рекурсивно преобразует списки в кортежи для возможности хеширования.
@@ -49,22 +48,19 @@ def get_mismatch_indices(list1, list2):
             mismatch_indices.append(i)
     return mismatch_indices
 
-
-# ----- блок функций для конвертации и работы с Word -----
+# ----- блок функций для конвертации и работы с Word (существующие) -----
 
 def convert_doc_to_docx(doc_path):
     '''
     Конвертирует .doc в .docx
     '''
-    word = win32com.client.Dispatch("Word.Application")     # создаёт COM-объект, который запускает Microsoft Word в фоновом режиме.
-    word.Visible = False                                    # Word будет работать в фоновом режиме, без отображения окна
+    word = win32com.client.Dispatch("Word.Application")
+    word.Visible = False
     doc = None
     try:
-        doc = word.Documents.Open(os.path.abspath(doc_path))    # преобразует относительный путь в абсолютный
+        doc = word.Documents.Open(os.path.abspath(doc_path))
         docx_path = doc_path.replace('.doc', '.docx')
-        doc.SaveAs(docx_path, FileFormat=16)                    # сохраняет документ в новом формате.
-                                                                # FileFormat=16 — числовой код формата .docx.
-                                                                # 16 = wdFormatDocumentDefault — стандартный формат Word (.docx)
+        doc.SaveAs(docx_path, FileFormat=16)
         doc.Close()
         word.Quit()
         return docx_path
@@ -104,22 +100,14 @@ def move_file(source_path, destination_dir):
         source_path: полный путь к файлу (например, "C:/files/doc.docx")
         destination_dir: путь к папке назначения (например, "C:/archive")
     """
-    # Проверяем, существует ли исходный файл
     if not os.path.exists(source_path):
         print(f"Файл не найден: {source_path}")
         return False
 
     try:    
-        # Создаём папку назначения, если её нет
         os.makedirs(destination_dir, exist_ok=True)
-        
-        # Получаем имя файла из полного пути
         filename = os.path.basename(source_path)
-        
-        # Формируем полный путь назначения
         destination_path = os.path.join(destination_dir, filename)
-    
-        # Переносим файл
         shutil.move(source_path, destination_path)
         print(f"Файл перемещён: {source_path} → {destination_path}")
         return True
@@ -136,7 +124,7 @@ def take_all_docx_from_dir(journals_directory):
 
     docx_files = list(source_dir.glob('*.docx')) 
     doc_files = list(source_dir.glob('*.doc'))
-    existing_stems = {f.stem for f in docx_files}  # промежуточный список .docx
+    existing_stems = {f.stem for f in docx_files}
     files = docx_files.copy()
     
     for doc_file in doc_files:
@@ -145,13 +133,11 @@ def take_all_docx_from_dir(journals_directory):
             files.append(Path(new_path))
         try:
             doc_backup_dir = source_dir / 'doc files'
-            doc_backup_dir.mkdir(exist_ok=True)  # создание директории для перемещения .doc файлов
+            doc_backup_dir.mkdir(exist_ok=True)
             shutil.move(str(doc_file), str(doc_backup_dir / doc_file.name))
-            # print(f"  📁 .doc файл перемещён: {doc_file.name} -> doc files/")
         except Exception as e:
             print(f"  ⚠️ Не удалось переместить {doc_file.name}: {e}")
     return files
-
 
 # ----- блок функций для извлечения данных из таблиц docx -----
 
@@ -338,4 +324,27 @@ def extract_all_text_from_docx(docx):
     for table in docx.tables:
         if table.rows:
             all_content.extend(extract_all_text_from_table(table))
+
+        # =================================
+        # Получение ревизии из колонтитула
+        # =================================
+    revision = ''
+    try:
+        section = docx.sections[0]                      # Получаем секцию документа
+        header = section.header                         # Получаем верхний колонтитул (header)
+        if header.tables:                               # Проверяем, есть ли таблица в колонтитуле
+            table1 = header.tables[0]                   # Берём первую таблицу
+            if  table1.rows:                            # Берём первую строку таблицы
+                first_row = table1.rows[0]
+                if first_row.cells:                     # Берём последнюю ячейку в строке (верхняя правая)
+                    last_cell = first_row.cells[-1]     # последняя ячейка
+                    cell_text = last_cell.text.strip()  # Извлекаем текст из ячейки
+                    match = re.search(r'([СC])(\d{2})', cell_text) # паттерн: буква С или C, затем две цифры
+                    if match:
+                        revision = match.group(0).replace('С', 'C')
+    except Exception as e:
+        print(f"  ⚠️ Ошибка при извлечении кода из колонтитула {docx}: {e}")
+    
+    if all_content and revision:
+        all_content.append('revision_' + revision)
     return all_content

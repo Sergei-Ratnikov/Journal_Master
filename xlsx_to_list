@@ -1,0 +1,98 @@
+# export_first_column_to_json.py
+"""
+Скрипт для извлечения данных из первого столбца Excel-файла
+и сохранения их в JSON-файл.
+"""
+
+import json
+import openpyxl
+from pathlib import Path
+
+
+def extract_first_column(file_path):
+    """
+    Извлекает данные из первого столбца Excel-файла.
+    
+    Args:
+        file_path: путь к Excel-файлу
+    
+    Returns:
+        list: список строк из первого столбца
+    """
+    # Проверяем, существует ли файл
+    if not Path(file_path).exists():
+        raise FileNotFoundError(f"Файл не найден: {file_path}")
+    
+    # Загружаем workbook
+    wb = openpyxl.load_workbook(file_path, data_only=True)
+    sheet = wb.active
+    
+    # Извлекаем данные из первого столбца
+    result = []
+    for row in sheet.iter_rows(min_row=1, max_col=1, values_only=True):
+        value = row[0]
+        if value is not None:  # пропускаем пустые ячейки
+            result.append(str(value).strip())
+    
+    return result
+
+
+def save_to_json(data, output_path):
+    """
+    Сохраняет список в JSON-файл.
+    
+    Args:
+        data: список данных
+        output_path: путь для сохранения JSON-файла
+    """
+    with open(output_path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+    
+    print(f"\n✅ Сохранено в: {output_path}")
+    print(f"📊 Всего строк: {len(data)}")
+
+
+if __name__ == "__main__":
+    import tkinter as tk
+    from tkinter import filedialog, messagebox
+    
+    # Создаём окно для выбора файла
+    root = tk.Tk()
+    root.withdraw()
+    
+    # Выбираем Excel-файл
+    input_file = filedialog.askopenfilename(
+        title="Выберите Excel-файл",
+        filetypes=[("Excel files", "*.xlsx"), ("All files", "*.*")]
+    )
+    
+    if not input_file:
+        print("Файл не выбран.")
+        exit()
+    
+    # Выбираем место сохранения JSON-файла
+    output_file = filedialog.asksaveasfilename(
+        title="Сохранить JSON как...",
+        defaultextension=".json",
+        filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
+    )
+    
+    if not output_file:
+        print("Место сохранения не выбрано.")
+        exit()
+    
+    try:
+        # Извлекаем данные
+        print(f"\nЗагрузка: {input_file}")
+        data = extract_first_column(input_file)
+        print(f"Извлечено строк: {len(data)}")
+        
+        # Сохраняем в JSON
+        save_to_json(data, output_file)
+        
+        messagebox.showinfo("Готово!", 
+            f"Извлечено {len(data)} строк\n\nСохранено в:\n{output_file}")
+        
+    except Exception as e:
+        messagebox.showerror("Ошибка", str(e))
+        print(f"Ошибка: {e}")

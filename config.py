@@ -5,7 +5,7 @@ import re
 BASE_NAME = 'Cable base ver.'
 
 # ----- Регулярные выражения -----
-regular_num = re.compile("\\d+[.,]?\\d+")                                 # Номер
+regular_num = re.compile(r"\d+(?:[.,]\d+)?") # re.compile("\\d+[.,]?\\d+")                                 # Номер
 
 number_section = r'\d+(?:[,.]\d+)?'
 regular_cableSection = re.compile(rf"\d?[(]?{number_section}[xх×]{number_section}[)]?(?:[xх×]{number_section})*")  # Сечение
