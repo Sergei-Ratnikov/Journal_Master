@@ -4694,5 +4694,13 @@
     "x_max": null,
     "y_min": null,
     "y_max": null
+  },
+    "10UBB": {
+    "is_valid": false,
+    "original": "",
+    "x_min": null,
+    "x_max": null,
+    "y_min": null,
+    "y_max": null
   }
 }

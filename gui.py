@@ -37,9 +37,11 @@ class CableParserGUI:
         title_frame.pack(fill="x")
         title_frame.pack_propagate(False)
         
-        tk.Label(title_frame, text="📁 КАБЕЛЬНЫЙ ЖУРНАЛ", 
+        tk.Label(title_frame, text="JOURNAL MASTER", 
                 font=("Arial", 18, "bold"), fg="white", bg="#2c3e50").pack(expand=True)
         tk.Label(title_frame, text="Парсер и создание базы данных",
+                font=("Arial", 10), fg="#bdc3c7", bg="#2c3e50").pack()
+        tk.Label(title_frame, text="АО Сосновоборэлектромонтаж, Проектное бюро, ver. 1.0, 2026",
                 font=("Arial", 10), fg="#bdc3c7", bg="#2c3e50").pack()
         
         # Основная область

@@ -329,8 +329,7 @@ def build_cable_database(journals_dir, output_dir, progress_callback=None):
                             
                             min_len = round(
                                 abs(from_x - to_x) + 
-                                abs(from_y - to_y) + 
-                                abs(from_z - to_z)
+                                abs(from_y - to_y) # + abs(from_z - to_z)
                             )
                             
                             sheetWrite.cell(row=rowWrite, column=31, value=min_len)
