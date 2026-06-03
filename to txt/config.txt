@@ -5,7 +5,10 @@ import re
 BASE_NAME = 'Cable base ver.'
 
 # ----- Регулярные выражения -----
-regular_num = re.compile("\\d+[.,]?\\d+")                                 # Номер
+
+regular_journal_kks = re.compile(r'AKU\.\d{2,4}\.\d{2}[A-Z]{3}\.[A-Z0-9.]+(?:-[A-Z0-9]+)?')  # ККС журнала
+
+regular_num = re.compile(r"\d+(?:[.,]\d+)?") # re.compile("\\d+[.,]?\\d+")                                 # Номер
 
 number_section = r'\d+(?:[,.]\d+)?'
 regular_cableSection = re.compile(rf"\d?[(]?{number_section}[xх×]{number_section}[)]?(?:[xх×]{number_section})*")  # Сечение
@@ -55,13 +58,14 @@ arrayCableMarks = ['КУГПЭПнг',
                    'КПСВЭВнг(А)-LS'
                    ]
 
-regular_KKS = re.compile("\\d{2,3}[А-ЯA-Z]{2,3}\\d{2,3}")                    # ККС оборудования 10BAT01GH301
+regular_KKS = re.compile("\\d{2,3}[А-ЯA-Z]{2,3}\\d{2,3}")             # ККС оборудования 10BAT01GH301
 regular_KKS_any = re.compile(r'(?=.*[A-Z])(?=.*\d)[A-Z\d\s.-]{5,}')   # ККС оборудования или помещения
 
 # Часть строки
 regular_KKS_room = re.compile(r'\d{2}[A-Z]{3}\d{1,3}R\d{1,3}')  # ККС помещения
 regular_KKS_building = re.compile(r'\d{2}[A-Z]{3}')  # ККС здания
 regular_KKS_equipment = re.compile(r'(?=.*[A-Z])(?=.*\d)(?!.*-.*-)(?!.*\s.*\s)[A-Z\d\s.-]{5,}') # ККС оборудования
+regular_cable_tray = re.compile(r'\d{2}\.\d{2}[A-Z]{3}\d{2}\.\d{2,3}(?:/\d{1,3})?') # ККС конструкции 00.07UBG10.105/4 или 00.07UBG10.105 
 
 # Вся строка
 regular_KKS_room_full = re.compile(r'^\d{2}[A-Z]{3}\d{1,3}R\d{1,3}$')  # ККС помещения
@@ -115,5 +119,8 @@ HEADERS = [
     [28, 'Статус объединения', 10],
     [29, 'Raw', 25],
     [30, 'min длина', 10],
-    [31, 'Длина меньше min', 10]
+    [31, 'Требования к объединению', 20],
+    [32, 'Ответная часть (из КЖ)', 40],
+    [33, 'Ответная часть вручную', 40],
+    [34, 'Примечание (из КЖ)', 40]
 ]

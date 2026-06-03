@@ -17,7 +17,7 @@ from tqdm import tqdm
 from doc_utils import take_all_docx_from_dir, extract_all_text_from_docx
 from cable_parser import row_parser
 import config
-
+from config import regular_KKS_building, regular_cable_tray, regular_journal_kks
 
 def current_version_finder(dir_in, b_name='Cable base ver.'):
     """
@@ -132,6 +132,55 @@ def mark_merged_cables(excel_path, json_path='merged_list.json'):
     print(f"   ✅ Отмечено кабелей как 'Объединён': {marked_count}")
     
     return marked_count
+
+
+def check_start_end_trace(from_room, to_room, trace):
+    """
+    Проверяет, содержит ли трасса ККС кабельных конструкций для указанных зданий.
+    Args:
+        from_room: ККС помещения откуда (например, '07UBG13R013')
+        to_room: ККС помещения куда (например, '07UBG13R009')
+        trace: строка с описанием трассы
+    Returns:
+        bool: True если найдены соответствующие ККС кабельных конструкций, иначе False
+    """
+
+    # 1. Извлекаем ККС здания откуда и куда
+    from_building_match = regular_KKS_building.search(str(from_room))
+    to_building_match = regular_KKS_building.search(str(to_room))
+    
+    # Если не удалось извлечь ККС здания, возвращаем False
+    if not from_building_match or not to_building_match:
+        return False
+    
+    from_building = from_building_match.group()  # например, '07UBG'
+    to_building = to_building_match.group()      # например, '07UBG'
+    
+    # 2. Находим все ККС кабельных конструкций в строке трассы
+    if not trace:
+        return False
+    
+    # Находим все совпадения с regular_cable_tray
+    tray_matches = regular_cable_tray.findall(trace)
+    
+    if not tray_matches:
+        return False
+    
+    # 3. Проверяем, содержат ли найденные ККС нужные здания
+    found_from = False
+    found_to = False
+    
+    for tray in tray_matches:
+        if from_building in tray:
+            found_from = True
+        if to_building in tray:
+            found_to = True
+    
+    # 4. Возвращаем результат в зависимости от совпадения зданий
+    if from_building == to_building:    # Здания совпадают: достаточно одного совпадения
+        return found_from or found_to
+    else:                               # Здания разные: нужны оба
+        return found_from and found_to
 
 
 def build_cable_database(journals_dir, output_dir, progress_callback=None):
@@ -286,13 +335,43 @@ def build_cable_database(journals_dir, output_dir, progress_callback=None):
                             
                             sheetWrite.cell(row=rowWrite, column=31, value=min_len)
                             
+                            # если фактическая длина меньше минимальной, то
                             if length_val < min_len:
-                                sheetWrite.cell(row=rowWrite, column=32, value='ДА')
+                                sheetWrite.cell(row=rowWrite, column=32, value='Да, длина меньше минимальной')
 
                         except Exception:
                             # Если что-то пошло не так — просто пропускаем
                             pass
                         
+                        # Проверка наличия кабельных конструкций здания начала и конца трассы.
+                        # Если в трассировке нет конструкций из начала И конца, то это признак необходимости объединения
+                        check_trace = processed_row[8]
+                        check_from_room = processed_row[9]
+                        check_to_room = processed_row[14]
+                        if check_trace and check_from_room and check_to_room:
+                            if not check_start_end_trace(check_from_room, check_to_room, check_trace):
+                                current = sheetWrite.cell(row=rowWrite, column=32).value or ''
+                                if current:
+                                    sheetWrite.cell(row=rowWrite, column=32, value=current + '; Да, трасса не полная')
+                                else:
+                                    sheetWrite.cell(row=rowWrite, column=32, value='Да, трасса не полная')
+
+                        # Проверка наличия ссылки на кабельный журнал в трассе
+                        # Если есть, то в графу 32, 'Ответная часть (из КЖ)' внести ККС журнала, в 31, 'Требования к объединению' - еще комментарий
+
+                        j = regular_journal_kks.search(str(check_trace))
+                        if j:
+                            j_in_trace = j.group()
+                            if j_in_trace:
+                                current = sheetWrite.cell(row=rowWrite, column=32).value or ''
+                                if current:
+                                    sheetWrite.cell(row=rowWrite, column=32, value=current + '; Да, есть ответная часть')
+                                else:
+                                    sheetWrite.cell(row=rowWrite, column=32, value='Да, есть ответная часть')
+
+                                sheetWrite.cell(row=rowWrite, column=33, value=j_in_trace)
+                            
+
                         rowWrite += 1
                         rows_processed += 1
 
