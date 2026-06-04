@@ -203,7 +203,20 @@ def build_cable_database(journals_dir, output_dir, progress_callback=None):
     
     # Получение списка всех журналов (.doc и .docx)
     journals = take_all_docx_from_dir(journals_dir)
-    journals_names = [j.stem for j in journals] if journals else []
+
+    # journals_names = [j.stem for j in journals] if journals else []
+
+    journals_names = []
+    if journals:
+        for j in journals:
+            # очистка названия КЖ перед записью
+            jrn = j.stem
+            match = regular_journal_kks.search(jrn)
+            if match:
+                jrn = match.group()
+            journals_names.append(jrn)
+            jrn = ''
+
     total_journals = len(journals)
     
     # Отчёт о прогрессе: найдено журналов
@@ -287,7 +300,14 @@ def build_cable_database(journals_dir, output_dir, progress_callback=None):
                     processed_row = None
 
                     if len(raw_row) > 6:
-                        raw_row.insert(0, journal.stem)
+                        # очистка названия КЖ перед записью
+                        jrn = journal.stem
+                        match = regular_journal_kks.search(jrn)
+                        if match:
+                            jrn = match.group()
+                        raw_row.insert(0, jrn)
+                        jrn = ''
+
                         processed_row = row_parser(raw_row, building_bounds)
 
                     rows_processed = 0
@@ -299,9 +319,9 @@ def build_cable_database(journals_dir, output_dir, progress_callback=None):
                         for idx, val in enumerate(processed_row, start=1):
                             sheetWrite.cell(row=rowWrite, column=idx, value=val)
                         
-                        sheetWrite.cell(row=rowWrite, column=30, value=str(raw_row))
                         sheetWrite.cell(row=rowWrite, column=24, value=revision)
-
+                        sheetWrite.cell(row=rowWrite, column=30, value=str(raw_row))
+                        
                         # Расчёт минимальной длины кабеля
                         try:
                             # Функция для преобразования координаты (замена запятой на точку)
@@ -347,30 +367,53 @@ def build_cable_database(journals_dir, output_dir, progress_callback=None):
                         check_trace = processed_row[8]
                         check_from_room = processed_row[9]
                         check_to_room = processed_row[14]
+                        
                         if check_trace and check_from_room and check_to_room:
-                            if not check_start_end_trace(check_from_room, check_to_room, check_trace):
-                                current = sheetWrite.cell(row=rowWrite, column=32).value or ''
-                                if current:
-                                    sheetWrite.cell(row=rowWrite, column=32, value=current + '; Да, трасса не полная')
+                            # Извлекаем ККС зданий
+                            from_match = regular_KKS_building.search(str(check_from_room))
+                            to_match = regular_KKS_building.search(str(check_to_room))
+                            
+                            if from_match and to_match:
+                                from_building = from_match.group()
+                                to_building = to_match.group()
+                                
+                                # Если здания одинаковые
+                                if from_building == to_building:
+                                    # Проверяем, есть ли в трассе ККС кабельных конструкций
+                                    tray_matches = regular_cable_tray.findall(check_trace)
+                                    if not tray_matches:
+                                        # Нет ни одной кабельной конструкции — пропускаем проверку, это прокладка по месту
+                                        pass
+                                    # else:
+                                    #     # Есть кабельные конструкции, но не для этого здания?
+                                    #     if not check_start_end_trace(check_from_room, check_to_room, check_trace):
+                                    #         current = sheetWrite.cell(row=rowWrite, column=32).value or ''
+                                    #         if current:
+                                    #             sheetWrite.cell(row=rowWrite, column=32, value=current + '; Да, трасса не полная')
+                                    #         else:
+                                    #             sheetWrite.cell(row=rowWrite, column=32, value='Да, трасса не полная')
                                 else:
-                                    sheetWrite.cell(row=rowWrite, column=32, value='Да, трасса не полная')
+                                    # Здания разные
+                                    if not check_start_end_trace(check_from_room, check_to_room, check_trace):
+                                        current = sheetWrite.cell(row=rowWrite, column=32).value or ''
+                                        if current:
+                                            sheetWrite.cell(row=rowWrite, column=32, value=current + '; Да, трасса не полная')
+                                        else:
+                                            sheetWrite.cell(row=rowWrite, column=32, value='Да, трасса не полная')
 
                         # Проверка наличия ссылки на кабельный журнал в трассе
                         # Если есть, то в графу 32, 'Ответная часть (из КЖ)' внести ККС журнала, в 31, 'Требования к объединению' - еще комментарий
-
-                        j = regular_journal_kks.search(str(check_trace))
-                        if j:
-                            j_in_trace = j.group()
-                            if j_in_trace:
-                                current = sheetWrite.cell(row=rowWrite, column=32).value or ''
-                                if current:
-                                    sheetWrite.cell(row=rowWrite, column=32, value=current + '; Да, есть ответная часть')
-                                else:
-                                    sheetWrite.cell(row=rowWrite, column=32, value='Да, есть ответная часть')
-
-                                sheetWrite.cell(row=rowWrite, column=33, value=j_in_trace)
+                        journal_matches = regular_journal_kks.findall(str(check_trace))
+                        if journal_matches:
+                            # Удаляем дубликаты через set и объединяем через пробел
+                            j_in_trace = ' '.join(sorted(set(journal_matches), key=journal_matches.index))
                             
-
+                            sheetWrite.cell(row=rowWrite, column=33, value=j_in_trace)
+                            
+                            current = sheetWrite.cell(row=rowWrite, column=32).value or ''
+                            separator = '; ' if current else ''
+                            sheetWrite.cell(row=rowWrite, column=32, value=f"{current}{separator}Да, есть ответная часть")
+                            
                         rowWrite += 1
                         rows_processed += 1
 
@@ -382,16 +425,52 @@ def build_cable_database(journals_dir, output_dir, progress_callback=None):
                 if progress_callback:
                     progress_callback(i + 1, total_journals, f"Ошибка в {journal.stem}: {str(e)[:50]}", is_error=True)
     
+
+
+    # ========== НОВЫЙ БЛОК: ПРОВЕРКА ЖУРНАЛОВ В ОТВЕТНОЙ ЧАСТИ ==========
+    # 1. Составляем список set всех ККС журналов во всей таблице (первый столбец)
+    all_journals_in_table = set()
+    for row in range(2, rowWrite):  # rowWrite - это следующая строка после последней заполненной
+        all_journals_in_table.add(sheetWrite.cell(row=row, column=1).value)
+    print(f"   📋 Найдено уникальных журналов в таблице: {len(all_journals_in_table)}")
+    
+    # 2. Проверяем кабели, у которых есть ККС журнала в столбце 33
+    for row in range(2, rowWrite):
+        ref_jrn = sheetWrite.cell(row=row, column=33).value
+        if ref_jrn:
+            # В столбце 33 может быть несколько ККС через пробел
+            ref_journals = str(ref_jrn).split()
+            has_journals_in_base = True # все журналы из списка ссылок есть в данной базе
+            for r in ref_journals:
+                if r not in all_journals_in_table:
+                    has_journals_in_base = False
+            
+            if has_journals_in_base:
+                l = 'есть в базе'
+            else:
+                l = 'нет в базе'
+            sheetWrite.cell(row=row, column=34, value=l)
+    
+    # ========== КОНЕЦ БЛОКА ПРОВЕРКИ ==========
+
+
+
+
+
+
+
+
+
     # Применяем автофильтр и сохраняем
     sheetWrite.auto_filter.ref = sheetWrite.dimensions
     output_path = Path(output_dir) / f"{b_name}{current_version}.xlsx"
     wb.save(output_path)
     
-    # ========== НОВЫЙ БЛОК: ОТМЕТКА ОБЪЕДИНЁННЫХ КАБЕЛЕЙ ==========
+    # ========== ОТМЕТКА ОБЪЕДИНЁННЫХ КАБЕЛЕЙ ==========
     # Пытаемся отметить кабели из merged_list.json как "Объединён"
     print("\n🏷️ Отметка объединённых кабелей...")
     mark_merged_cables(output_path, 'merged_list.json')
-    # ========== КОНЕЦ НОВОГО БЛОКА ==========
+    # ========== КОНЕЦ БЛОКА ==========
     
     if progress_callback:
         progress_callback(total_journals, total_journals, "Сохранение базы данных")

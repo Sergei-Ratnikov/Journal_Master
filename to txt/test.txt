@@ -1,4 +1,0 @@
-line1 = 'wwww'
-line2 = ''
-if line2:
-    print(line1)
