@@ -17,7 +17,7 @@ from tqdm import tqdm
 from doc_utils import take_all_docx_from_dir, extract_all_text_from_docx
 from cable_parser import row_parser
 import config
-from config import regular_KKS_building, regular_cable_tray, regular_journal_kks
+from config import regular_KKS_building, regular_cable_tray, regular_journal_kks, regular_journal_kks_short
 
 def current_version_finder(dir_in, b_name='Cable base ver.'):
     """
@@ -183,15 +183,17 @@ def check_start_end_trace(from_room, to_room, trace):
         return found_from and found_to
 
 
-def build_cable_database(journals_dir, output_dir, progress_callback=None):
+def build_cable_database(journals_dir, output_dir, progress_callback=None, source_type='СУПИР'):
     """
     Создаёт кабельную базу из журналов в указанной папке.
     Args:
         journals_dir: папка с журналами (.doc, .docx)
         output_dir: папка, в которую будет сохранена новая база
         progress_callback: функция для обновления прогресса (принимает current, total, message)
+        source_type: источник данных ('СУПИР' или 'ВК')
     """
     print("\nЗапуск build_cable_database...")
+    print(f"   📌 Источник журналов: {source_type}")
 
     # Загрузка границ зданий из JSON
     with open('KKS_building_bounds.json', 'r', encoding='utf-8') as f:
@@ -320,6 +322,7 @@ def build_cable_database(journals_dir, output_dir, progress_callback=None):
                             sheetWrite.cell(row=rowWrite, column=idx, value=val)
                         
                         sheetWrite.cell(row=rowWrite, column=24, value=revision)
+                        sheetWrite.cell(row=rowWrite, column=27, value=source_type)
                         sheetWrite.cell(row=rowWrite, column=30, value=str(raw_row))
                         
                         # Расчёт минимальной длины кабеля
@@ -356,7 +359,7 @@ def build_cable_database(journals_dir, output_dir, progress_callback=None):
                             
                             # если фактическая длина меньше минимальной, то
                             if length_val < min_len:
-                                sheetWrite.cell(row=rowWrite, column=32, value='Да, длина меньше минимальной')
+                                sheetWrite.cell(row=rowWrite, column=32, value='Длина меньше минимальной')
 
                         except Exception:
                             # Если что-то пошло не так — просто пропускаем
@@ -397,13 +400,13 @@ def build_cable_database(journals_dir, output_dir, progress_callback=None):
                                     if not check_start_end_trace(check_from_room, check_to_room, check_trace):
                                         current = sheetWrite.cell(row=rowWrite, column=32).value or ''
                                         if current:
-                                            sheetWrite.cell(row=rowWrite, column=32, value=current + '; Да, трасса не полная')
+                                            sheetWrite.cell(row=rowWrite, column=32, value=current + '; трасса не полная')
                                         else:
-                                            sheetWrite.cell(row=rowWrite, column=32, value='Да, трасса не полная')
+                                            sheetWrite.cell(row=rowWrite, column=32, value='трасса не полная')
 
                         # Проверка наличия ссылки на кабельный журнал в трассе
                         # Если есть, то в графу 32, 'Ответная часть (из КЖ)' внести ККС журнала, в 31, 'Требования к объединению' - еще комментарий
-                        journal_matches = regular_journal_kks.findall(str(check_trace))
+                        journal_matches = regular_journal_kks_short.findall(str(check_trace))
                         if journal_matches:
                             # Удаляем дубликаты через set и объединяем через пробел
                             j_in_trace = ' '.join(sorted(set(journal_matches), key=journal_matches.index))
@@ -412,7 +415,7 @@ def build_cable_database(journals_dir, output_dir, progress_callback=None):
                             
                             current = sheetWrite.cell(row=rowWrite, column=32).value or ''
                             separator = '; ' if current else ''
-                            sheetWrite.cell(row=rowWrite, column=32, value=f"{current}{separator}Да, есть ответная часть")
+                            sheetWrite.cell(row=rowWrite, column=32, value=f"{current}{separator}есть ответная часть")
                             
                         rowWrite += 1
                         rows_processed += 1
@@ -427,7 +430,7 @@ def build_cable_database(journals_dir, output_dir, progress_callback=None):
     
 
 
-    # ========== НОВЫЙ БЛОК: ПРОВЕРКА ЖУРНАЛОВ В ОТВЕТНОЙ ЧАСТИ ==========
+    # ========== ПРОВЕРКА ЖУРНАЛОВ В ОТВЕТНОЙ ЧАСТИ ==========
     # 1. Составляем список set всех ККС журналов во всей таблице (первый столбец)
     all_journals_in_table = set()
     for row in range(2, rowWrite):  # rowWrite - это следующая строка после последней заполненной
@@ -438,27 +441,24 @@ def build_cable_database(journals_dir, output_dir, progress_callback=None):
     for row in range(2, rowWrite):
         ref_jrn = sheetWrite.cell(row=row, column=33).value
         if ref_jrn:
-            # В столбце 33 может быть несколько ККС через пробел
             ref_journals = str(ref_jrn).split()
-            has_journals_in_base = True # все журналы из списка ссылок есть в данной базе
-            for r in ref_journals:
-                if r not in all_journals_in_table:
-                    has_journals_in_base = False
+            missing = []
             
-            if has_journals_in_base:
-                l = 'есть в базе'
+            for r in ref_journals:
+                # Точное совпадение или подстрока
+                if r in all_journals_in_table:
+                    continue
+                # Проверяем, содержится ли r как подстрока в каком-либо журнале
+                if any(r in journal for journal in all_journals_in_table if journal):
+                    continue
+                missing.append(r)
+            
+            if missing:
+                sheetWrite.cell(row=row, column=34, value='нет в базе')
             else:
-                l = 'нет в базе'
-            sheetWrite.cell(row=row, column=34, value=l)
+                sheetWrite.cell(row=row, column=34, value='есть в базе')
     
     # ========== КОНЕЦ БЛОКА ПРОВЕРКИ ==========
-
-
-
-
-
-
-
 
 
     # Применяем автофильтр и сохраняем

@@ -7,6 +7,7 @@ BASE_NAME = 'Cable base ver.'
 # ----- Регулярные выражения -----
 
 regular_journal_kks = re.compile(r'AKU\.\d{2,4}\.\d{2}[A-Z]{3}\.[A-Z0-9.]+-[A-Z0-9]+')     # ККС журнала
+regular_journal_kks_short = re.compile(r'AKU\.\d{2,4}\.\d{2}[A-Z]{3}\.[A-Z0-9.]+(?:-[A-Z0-9]+)?') # ККС журнала с возможным отсутствием хвоста -EMB0001
 
 regular_num = re.compile(r"\d+(?:[.,]\d+)?") # re.compile("\\d+[.,]?\\d+")                      # Номер
 

@@ -17,15 +17,16 @@ class CableParserGUI:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("Кабельный журнал - Парсер баз данных")
-        self.root.geometry("650x550")
+        self.root.geometry("650x600")  # увеличил высоту для нового элемента
         self.root.resizable(False, False)
         self.root.configure(bg="#f0f0f0")
         
         self.journals_dir = tk.StringVar()
         self.output_dir = tk.StringVar()
-        self.open_folder = tk.BooleanVar(value=True)  # Чекбокс: открывать папку по умолчанию
+        self.source_type = tk.StringVar(value="СУПИР")  # значение по умолчанию
+        self.open_folder = tk.BooleanVar(value=True)
         self.is_running = False
-        self.last_saved_file = None  # Для хранения пути к сохранённому файлу
+        self.last_saved_file = None
         
         self.setup_ui()
         
@@ -61,12 +62,33 @@ class CableParserGUI:
         # Папка для сохранения
         output_frame = tk.LabelFrame(main_frame, text="💾 Сохранение базы", 
                                      padx=10, pady=10, font=("Arial", 10, "bold"), bg="#f0f0f0")
-        output_frame.pack(fill="x", pady=(0, 20))
+        output_frame.pack(fill="x", pady=(0, 15))
         
         tk.Entry(output_frame, textvariable=self.output_dir, 
                 font=("Arial", 10), state="readonly", bg="white").pack(side="left", fill="x", expand=True, padx=(0, 10))
         tk.Button(output_frame, text="Выбрать папку", command=self.select_output_dir,
                  bg="#3498db", fg="white", font=("Arial", 9), padx=10, cursor="hand2").pack(side="right")
+        
+        # ========== НОВЫЙ БЛОК: ВЫПАДАЮЩИЙ СПИСОК "ИСТОЧНИК ЖУРНАЛОВ" ==========
+        source_frame = tk.LabelFrame(main_frame, text="📌 Источник журналов", 
+                                     padx=10, pady=10, font=("Arial", 10, "bold"), bg="#f0f0f0")
+        source_frame.pack(fill="x", pady=(0, 15))
+        
+        # Создаём выпадающий список (Combobox)
+        self.source_combo = ttk.Combobox(
+            source_frame,
+            textvariable=self.source_type,
+            values=["СУПИР", "ВК"],
+            state="readonly",  # только для чтения (нельзя вводить свои значения)
+            font=("Arial", 10),
+            width=20
+        )
+        self.source_combo.pack(pady=5)
+        
+        # Подпись под выпадающим списком
+        tk.Label(source_frame, text="Выберите источник данных для новых журналов",
+                font=("Arial", 8), fg="#7f8c8d", bg="#f0f0f0").pack()
+        # ========== КОНЕЦ НОВОГО БЛОКА ==========
         
         # Чекбокс
         checkbox_frame = tk.Frame(main_frame, bg="#f0f0f0")
@@ -137,7 +159,6 @@ class CableParserGUI:
         self.root.update_idletasks()
     
     def update_progress(self, current, total, message, is_error=False):
-        """Обновляет прогресс-бар (вызывается из excel_utils)"""
         if total > 0:
             percent = int((current / total) * 100)
             self.progress_bar["value"] = percent
@@ -151,18 +172,12 @@ class CableParserGUI:
         self.root.update_idletasks()
     
     def open_output_folder(self):
-        """Открывает папку с сохранённой базой данных"""
         folder = self.output_dir.get().strip()
-        
         if not folder:
             self.update_status("Не выбрана папка для сохранения!", is_error=True)
             return
-        
-        # Нормализуем путь (преобразуем в формат Windows)
         folder = os.path.normpath(folder)
-        
         if os.path.exists(folder):
-            # Открываем папку в проводнике Windows
             subprocess.Popen(f'explorer "{folder}"')
             self.update_status(f"Открыта папка: {folder}")
         else:
@@ -190,6 +205,7 @@ class CableParserGUI:
         self.progress_detail.config(text="Подготовка к обработке...", fg="#2c3e50")
         self.update_status("⏳ Обработка журналов...")
         
+        # Запускаем в отдельном потоке, передавая выбранный источник
         thread = threading.Thread(target=self._process, daemon=True)
         thread.start()
     
@@ -199,7 +215,8 @@ class CableParserGUI:
             build_cable_database(
                 self.journals_dir.get(), 
                 self.output_dir.get(),
-                progress_callback=self.update_progress
+                progress_callback=self.update_progress,
+                source_type=self.source_type.get()  # передаём выбранный источник
             )
             self.root.after(0, self._on_success, start_time)
         except Exception as e:
@@ -212,15 +229,14 @@ class CableParserGUI:
         self.update_status(f"✅ Обработка завершена! Время: {duration:.2f} сек")
         self.progress_detail.config(text="Готово! База данных создана.", fg="#27ae60")
         
-        # Открываем папку, если чекбокс отмечен
         if self.open_folder.get():
-            # Небольшая задержка для завершения всех операций записи
             self.root.after(500, self.open_output_folder)
         
         messagebox.showinfo("Готово!", 
             f"✅ Обработка завершена!\n\n"
             f"📁 Журналы: {self.journals_dir.get()}\n"
             f"💾 База сохранена в: {self.output_dir.get()}\n"
+            f"📌 Источник: {self.source_type.get()}\n"
             f"⏱️ Время: {duration:.2f} сек")
     
     def _on_error(self, error_msg):
