@@ -1,34 +1,78 @@
-Проект/
-├── main.py                    # точка входа
-├── config.py                  # константы, регулярки, HEADERS
-├── doc_utils.py               # работа с Word (извлечение таблиц)
-├── kks_utils.py               # KKS и координаты
-├── cable_parser.py            # row_parser и парсинг строки
-├── excel_utils.py             # создание базы, версионирование, перенос
-├── KKS_building_bounds.json   # границы зданий (данные)
+📁 project_root/
 │
-├── Исходники/           # папка с журналами
-│   ├── *.docx
-│   ├── *.doc
-│   └── doc files/       # создаётся автоматически
+├── 🎯 main.py                      # Точка входа для консольного запуска.
+│   └── main()                      # Запрашивает пути у пользователя и вызывает build_cable_database().
 │
-└── Cable base ver.X.xlsx # создаётся автоматически
-
-
-структура импортов
-
-cable_parser.py
-    ├── imports: re, config, kks_utils
-    └── defines: make_hashable, is_subset_with_lists, all_deep_empty, get_mismatch_indices, row_parser
-
-doc_utils.py
-    ├── imports: os, shutil, re, win32com, Path, Document, config
-    └── imports from cable_parser: all_deep_empty, get_mismatch_indices, is_subset_with_lists
-
-excel_utils.py
-    ├── imports: json, openpyxl, Path, date, Document, tqdm
-    ├── imports from doc_utils: take_all_docx_from_dir, extract_all_text_from_docx
-    └── imports from cable_parser: row_parser
-
-main.py
-    └── imports from excel_utils: build_cable_database
+├── 🖥️ gui.py                       # Графический интерфейс пользователя.
+│   └── CableParserGUI              # Класс, управляющий окном Tkinter.
+│       ├── select_journals_dir()   # Открывает диалог выбора папки с журналами.
+│       ├── select_output_dir()     # Открывает диалог выбора папки для сохранения.
+│       ├── run_parser()            # Запускает обработку в отдельном потоке.
+│       └── _process()              # Вызывает build_cable_database() с параметрами из GUI.
+│
+├── 🧠 excel_utils.py               # Основной мозг: создание Excel-базы.
+│   ├── current_version_finder()   # Ищет последнюю версию базы в папке, чтобы создать новую.
+│   ├── remove_plus_from_numbers() # Убирает лишние '+' из координат (используется при очистке).
+│   ├── mark_merged_cables()       # Отмечает в базе кабели, объединенные в cable_merger.py.
+│   ├── check_start_end_trace()    # Проверяет, есть ли в трассе указания на кабельные конструкции нужных зданий.
+│   └── build_cable_database()     # ГЛАВНАЯ ФУНКЦИЯ. Обрабатывает журналы, парсит строки и собирает базу.
+│
+├── 🔧 cable_parser.py              # Парсит одну строку (кабель) из Word-таблицы.
+│   ├── is_number()                # Проверяет, является ли строка числом.
+│   ├── parse_coordinates_from_list() # Ищет три координаты (X, Y, Z) внутри одного списка.
+│   ├── parse_kks_block()          # Разбирает блок "Откуда" или "Куда" (1 или 3 ячейки), извлекает KKS и координаты.
+│   └── row_parser()               # Принимает сырую строку из Word, возвращает массив из 20 полей для Excel.
+│
+├── 📄 doc_utils.py                 # Работа с Word-документами.
+│   ├── make_hashable()            # Вспомогательная функция для сравнения списков.
+│   ├── is_subset_with_lists()     # Проверяет вхождение одного списка в другой (для склейки строк).
+│   ├── all_deep_empty()           # Проверяет, пуст ли глубоко вложенный список.
+│   ├── get_mismatch_indices()     # Находит индексы несовпадающих элементов в двух списках.
+│   ├── convert_doc_to_docx()      # Конвертирует .doc в .docx (использует win32com).
+│   ├── convert_numbering_to_text()# Конвертирует автонумерацию в обычный текст (win32com).
+│   ├── move_file()                # Перемещает файл в другую папку.
+│   ├── take_all_docx_from_dir()   # Собирает все .docx, конвертирует .doc и перемещает их в архив.
+│   ├── extract_all_text_from_cell()# Рекурсивно извлекает текст из ячейки, учитывая вложенные таблицы.
+│   ├── remove_duplicate_pairs()   # Удаляет дублирующиеся пары элементов (эффект объединенных ячеек).
+│   ├── remove_duplicates()        # Удаляет последовательные дубликаты в списке.
+│   ├── find_first_and_last_sublist_index() # Ищет первое и последнее вхождение подсписка.
+│   ├── extract_all_text_from_table() # Обрабатывает таблицу: чистит, склеивает разорванные строки, парсит координаты.
+│   └── extract_all_text_from_docx() # Извлекает все данные из всех таблиц документа и ревизию из колонтитула.
+│
+├── 🧩 kks_utils.py                # Работа с кодами KKS и координатами.
+│   ├── cleanCyrFromLat()          # Заменяет кириллицу на латиницу (С → C, А → A и т.д.).
+│   ├── parse_kks_room_and_equip() # Разделяет KKS на помещение и оборудование.
+│   ├── parse_route_to_bounds()    # Извлекает координаты из строки маршрута здания.
+│   ├── export_kks_to_json()       # Создает JSON-файл с границами зданий из KKS.xlsx.
+│   ├── parse_coordinate_pair()    # Парсит пару координат, определяет масштаб.
+│   ├── check_and_swap_axes()      # Проверяет, не перепутаны ли оси X и Y, и меняет их местами.
+│   ├── format_coordinate()        # Форматирует координату для вывода (убирает лишние нули).
+│   └── normalize_coordinates()    # Нормализует координаты: парсит, масштабирует, меняет оси.
+│
+├── 🗂️ cable_merger.py              # Отдельный скрипт для объединения кабелей, разбитых на отрезки.
+│   ├── get_column_index()         # Находит индекс колонки по имени из config.HEADERS.
+│   ├── set_column_widths()        # Устанавливает ширину столбцов в Excel.
+│   ├── apply_autofilter()         # Включает автофильтр.
+│   ├── freeze_panes()             # Закрепляет первую строку.
+│   ├── setup_excel_sheet()        # Настраивает лист Excel (заголовки, ширина, заморозка).
+│   ├── parse_float()              # Преобразует строку (с запятой/точкой) в число.
+│   ├── get_building()             # Извлекает код здания из KKS.
+│   ├── can_merge()                # Проверяет, можно ли объединить два кабеля (совпадение группы, сечения и т.д.).
+│   ├── merge_two_cables()         # Объединяет два кабеля в один (суммирует длину, объединяет трассу).
+│   └── process_cable_base()       # Основная функция объединения. Группирует кабели по KKS, объединяет или отправляет на проверку.
+│
+├── ⚙️ config.py                    # Глобальные настройки проекта.
+│   # Содержит:
+│   #   - BASE_NAME: имя выходного файла базы.
+│   #   - Все регулярные выражения.
+│   #   - HEADERS: структура колонок Excel-таблицы (индекс, имя, ширина).
+│
+├── 📂 вспомогательные файлы
+│   ├── merged_list.txt           # Список KKS кабелей, которые уже были объединены.
+│   └── KKS_building_bounds.txt   # JSON-файл с границами зданий (создается kks_utils.export_kks_to_json).
+│
+└── 🧪 (Внешние зависимости)       # Библиотеки, которые ты используешь.
+    ├── openpyxl                  # Работа с Excel.
+    ├── python-docx               # Работа с .docx.
+    ├── win32com.client           # Работа с .doc и конвертация нумерации.
+    └── tkinter                   # Графический интерфейс.

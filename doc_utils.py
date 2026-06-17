@@ -119,25 +119,29 @@ def take_all_docx_from_dir(journals_directory):
     '''
     получение списка всех .docx файлов из указанной директории
     все .doc файлы преобразуются в .docx и перемещаются в отдельную директорию
+    Возвращает: (список_файлов, список_конвертированных)
     '''
     source_dir = Path(journals_directory).resolve()
-
+    
     docx_files = list(source_dir.glob('*.docx')) 
     doc_files = list(source_dir.glob('*.doc'))
     existing_stems = {f.stem for f in docx_files}
     files = docx_files.copy()
+    converted = []  # список конвертированных файлов
     
     for doc_file in doc_files:
         if doc_file.stem not in existing_stems:
             new_path = convert_doc_to_docx(str(doc_file))
             files.append(Path(new_path))
+            converted.append((doc_file.name, Path(new_path).name))
         try:
             doc_backup_dir = source_dir / 'doc files'
             doc_backup_dir.mkdir(exist_ok=True)
             shutil.move(str(doc_file), str(doc_backup_dir / doc_file.name))
         except Exception as e:
             print(f"  ⚠️ Не удалось переместить {doc_file.name}: {e}")
-    return files
+    return files, converted
+
 
 # ----- блок функций для извлечения данных из таблиц docx -----
 

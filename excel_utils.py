@@ -17,7 +17,7 @@ from tqdm import tqdm
 from doc_utils import take_all_docx_from_dir, extract_all_text_from_docx
 from cable_parser import row_parser
 import config
-from config import regular_KKS_building, regular_cable_tray, regular_journal_kks, regular_journal_kks_short
+from config import regular_KKS_building, regular_cable_tray, regular_journal_kks, regular_journal_kks_short, regular_filename
 
 def current_version_finder(dir_in, b_name='Cable base ver.'):
     """
@@ -61,20 +61,112 @@ def remove_plus_from_numbers(obj):
         return obj
 
 
-def mark_merged_cables(excel_path, json_path='merged_list.json'):
+def mark_merged_cables(excel_path):
     """
-    Отмечает кабели из JSON-списка как "Объединён" в столбце 28 'Статус объединения'.
-    Args:
-        excel_path: путь к Excel-файлу базы данных
-        json_path: путь к JSON-файлу со списком KKS (по умолчанию 'merged_list.json')
+    Отмечает кабели из листа 'Объединенные кабели' как "Объединён" в столбце 28 'Статус объединения'.
+    """
+    # Загружаем Excel-файл
+    wb = load_workbook(excel_path)
     
-    Returns:
-        int: количество отмеченных кабелей
+    # Проверяем, есть ли лист 'Объединенные кабели'
+    if 'Объединенные кабели' not in wb.sheetnames:
+        print("   ⚠️ Лист 'Объединенные кабели' не найден. Пропуск отметки.")
+        return 0
+    
+    merged_sheet = wb['Объединенные кабели']
+    main_sheet = wb.active
+    
+    # Собираем множество ККС из первого столбца листа 'Объединенные кабели' (со второй строки)
+    merged_kks_set = set()
+    for row in merged_sheet.iter_rows(min_row=2, values_only=True):
+        if row and row[0]:  # первый столбец не пустой
+            kks_value = str(row[0]).strip()
+            if kks_value:
+                merged_kks_set.add(kks_value)
+    
+    if not merged_kks_set:
+        print("   ℹ️ Лист 'Объединенные кабели' пуст. Нет кабелей для отметки.")
+        return 0
+    
+    print(f"   📋 Загружено ККС для отметки из листа 'Объединенные кабели': {len(merged_kks_set)}")
+    
+    # Находим индекс колонки 'ККС' и 'Статус объединения' в основном листе
+    kks_col = None
+    status_col = None
+    
+    for col_idx, cell in enumerate(main_sheet[1], start=1):
+        if cell.value and 'ККС' in str(cell.value):
+            kks_col = col_idx
+        if cell.value and 'Статус объединения' in str(cell.value):
+            status_col = col_idx
+    
+    if kks_col is None or status_col is None:
+        print("   ⚠️ Колонки 'ККС' или 'Статус объединения' не найдены. Пропуск отметки.")
+        return 0
+    
+    # Проходим по всем строкам и отмечаем совпадающие KKS
+    marked_count = 0
+    for row_idx in range(2, main_sheet.max_row + 1):
+        kks_cell = main_sheet.cell(row=row_idx, column=kks_col)
+        kks_value = str(kks_cell.value).strip() if kks_cell.value else ''
+        
+        if kks_value in merged_kks_set:
+            status_cell = main_sheet.cell(row=row_idx, column=status_col)
+            status_cell.value = 'Объединён'
+            marked_count += 1
+    
+    # Сохраняем изменения
+    wb.save(excel_path)
+    print(f"   ✅ Отмечено кабелей как 'Объединён': {marked_count}")
+    
+    return marked_count
+
+
+def copy_merged_sheet_from_old_base(old_path, new_workbook):
     """
-    # Проверяем, существует ли JSON-файл
+    Копирует лист 'Объединенные кабели' из старой базы в новую.
+    Если листа нет — создаёт пустой с одной колонкой.
+    """
+    # Создаём новый лист с одной колонкой ПОСЛЕ первого листа
+    new_sheet = new_workbook.create_sheet("Объединенные кабели", index=1)
+    new_sheet.cell(row=1, column=1, value="ККС")  # Заголовок
+    new_sheet.column_dimensions['A'].width = 30   # Ширина колонки
+    
+    # Если старая база не существует — возвращаем пустой лист
+    if not old_path.exists():
+        print("   ℹ️ Старая база не найдена. Создан пустой лист 'Объединенные кабели'.")
+        return new_sheet
+    
+    # Загружаем старую базу
+    try:
+        rb = load_workbook(old_path, data_only=True)
+        if 'Объединенные кабели' not in rb.sheetnames:
+            print("   ℹ️ В старой базе нет листа 'Объединенные кабели'. Создан пустой лист.")
+            return new_sheet
+        
+        old_sheet = rb['Объединенные кабели']
+        
+        # Копируем все строки со второй по последнюю (только первый столбец)
+        row_idx = 2
+        for row in old_sheet.iter_rows(min_row=2, values_only=True):
+            if row and row[0]:  # если первый столбец не пустой
+                new_sheet.cell(row=row_idx, column=1, value=row[0])
+                row_idx += 1
+        
+        print(f"   ✅ Скопировано {row_idx - 2} ККС из листа 'Объединенные кабели' старой базы.")
+        return new_sheet
+    except Exception as e:
+        print(f"   ⚠️ Ошибка при копировании листа 'Объединенные кабели': {e}")
+        return new_sheet
+
+
+def add_merged_cables_from_json(json_path, merged_sheet):
+    """
+    Добавляет ККС из merged_list.json в лист 'Объединенные кабели'.
+    """
     json_file = Path(json_path)
     if not json_file.exists():
-        print(f"   ⚠️ Файл {json_path} не найден. Пропуск отметки объединённых кабелей.")
+        print(f"   ⚠️ Файл {json_path} не найден. Пропуск добавления объединённых кабелей.")
         return 0
     
     # Загружаем список KKS из JSON
@@ -86,52 +178,82 @@ def mark_merged_cables(excel_path, json_path='merged_list.json'):
         return 0
     
     if not merged_kks_list:
-        print(f"   ⚠️ Файл {json_path} пуст. Пропуск отметки объединённых кабелей.")
+        print(f"   ℹ️ Файл {json_path} пуст. Нет кабелей для добавления.")
         return 0
     
-    # Преобразуем список в множество для быстрого поиска
-    merged_kks_set = set(str(kks).strip() for kks in merged_kks_list if kks)
+    # Находим первую свободную строку
+    row_idx = merged_sheet.max_row + 1
+    added_count = 0
     
-    print(f"   📋 Загружено KKS для отметки: {len(merged_kks_set)}")
+    for kks in merged_kks_list:
+        if not kks:
+            continue
+        kks_str = str(kks).strip()
+        merged_sheet.cell(row=row_idx, column=1, value=kks_str)
+        row_idx += 1
+        added_count += 1
     
-    # Загружаем Excel-файл
-    wb = load_workbook(excel_path)
-    sheet = wb.active
+    print(f"   ✅ Добавлено {added_count} ККС из {json_path} в лист 'Объединенные кабели'.")
+    return added_count
+
+
+def load_old_notes(old_base_path, journals_names):
+    """
+    Загружает примечания из старой базы для кабелей, 
+    которые будут заменены новыми журналами.
     
-    # Находим индекс колонки 'ККС' и 'Статус объединения'
-    kks_col = None
-    status_col = None
+    Args:
+        old_base_path: путь к старой базе
+        journals_names: список ККС новых журналов
     
-    for col_idx, cell in enumerate(sheet[1], start=1):
-        if cell.value and 'ККС' in str(cell.value):
-            kks_col = col_idx
-        if cell.value and 'Статус объединения' in str(cell.value):
-            status_col = col_idx
+    Returns:
+        dict: { (journal_kks, cable_kks): note }
+    """
+    notes_dict = {}
     
-    if kks_col is None:
-        print(f"   ⚠️ Колонка 'ККС' не найдена. Пропуск отметки.")
-        return 0
+    if not old_base_path or not old_base_path.exists():
+        return notes_dict
     
-    if status_col is None:
-        print(f"   ⚠️ Колонка 'Статус объединения' не найдена. Пропуск отметки.")
-        return 0
-    
-    # Проходим по всем строкам и отмечаем совпадающие KKS
-    marked_count = 0
-    for row_idx in range(2, sheet.max_row + 1):
-        kks_cell = sheet.cell(row=row_idx, column=kks_col)
-        kks_value = str(kks_cell.value).strip() if kks_cell.value else ''
+    try:
+        rb = load_workbook(old_base_path, data_only=True)
+        sheetRead = rb.active
         
-        if kks_value in merged_kks_set:
-            status_cell = sheet.cell(row=row_idx, column=status_col)
-            status_cell.value = 'Объединён'
-            marked_count += 1
-    
-    # Сохраняем изменения
-    wb.save(excel_path)
-    print(f"   ✅ Отмечено кабелей как 'Объединён': {marked_count}")
-    
-    return marked_count
+        # Находим индексы нужных колонок
+        journal_col = None
+        kks_col = None
+        note_col = None
+        
+        for col_idx, cell in enumerate(sheetRead[1], start=1):
+            if cell.value:
+                col_name = str(cell.value)
+                if 'Журнал' in col_name:
+                    journal_col = col_idx
+                elif 'ККС' in col_name and 'ККС' == col_name.split('. ')[1] if '. ' in col_name else col_name == 'ККС':
+                    kks_col = col_idx
+                elif 'Примечание' in col_name:
+                    note_col = col_idx
+        
+        if journal_col is None or kks_col is None or note_col is None:
+            print("   ⚠️ Не найдены нужные колонки в старой базе для загрузки примечаний.")
+            return notes_dict
+        
+        # Проходим по всем строкам старой базы
+        for row in sheetRead.iter_rows(min_row=2, values_only=True):
+            journal_name = str(row[journal_col - 1]).strip() if row[journal_col - 1] else ''
+            cable_kks = str(row[kks_col - 1]).strip() if row[kks_col - 1] else ''
+            note = str(row[note_col - 1]).strip() if row[note_col - 1] else ''
+            
+            # Если журнал будет заменён новым И есть примечание И есть ККС
+            if journal_name in journals_names and note and cable_kks:
+                key = (journal_name, cable_kks)
+                notes_dict[key] = note
+        
+        print(f"   📋 Загружено {len(notes_dict)} примечаний из старой базы для заменяемых кабелей.")
+        return notes_dict
+        
+    except Exception as e:
+        print(f"   ⚠️ Ошибка при загрузке примечаний из старой базы: {e}")
+        return notes_dict
 
 
 def check_start_end_trace(from_room, to_room, trace):
@@ -183,7 +305,93 @@ def check_start_end_trace(from_room, to_room, trace):
         return found_from and found_to
 
 
-def build_cable_database(journals_dir, output_dir, progress_callback=None, source_type='СУПИР'):
+def create_log_sheet(workbook, log_data):
+    """
+    Создаёт лист 'Лог' в конце книги с информацией о проделанной работе.
+    
+    Args:
+        workbook: объект Workbook
+        log_data: словарь с данными для лога
+    """
+    # Создаём лист в конце
+    log_sheet = workbook.create_sheet("Лог", index=len(workbook.sheetnames))
+    
+    # Настройка ширины колонок
+    log_sheet.column_dimensions['A'].width = 25
+    log_sheet.column_dimensions['B'].width = 40
+    log_sheet.column_dimensions['C'].width = 30
+    log_sheet.column_dimensions['D'].width = 20
+    log_sheet.column_dimensions['E'].width = 15
+    
+    row_idx = 1
+    
+    # ========== ЗАГОЛОВОК ==========
+    log_sheet.cell(row=row_idx, column=1, value="ТИП СОБЫТИЯ")
+    log_sheet.cell(row=row_idx, column=2, value="ПОДРОБНОСТИ")
+    log_sheet.cell(row=row_idx, column=3, value="ИСТОЧНИК")
+    log_sheet.cell(row=row_idx, column=4, value="ДАТА")
+    log_sheet.cell(row=row_idx, column=5, value="КОЛИЧЕСТВО")
+    row_idx += 1
+    
+    # ========== ДОБАВЛЕННЫЕ ЖУРНАЛЫ ==========
+    if log_data.get('added'):
+        log_sheet.cell(row=row_idx, column=1, value="ДОБАВЛЕНЫ НОВЫЕ ЖУРНАЛЫ")
+        row_idx += 1
+        for journal, source, date, count in log_data['added']:
+            log_sheet.cell(row=row_idx, column=2, value=journal)
+            log_sheet.cell(row=row_idx, column=3, value=source)
+            log_sheet.cell(row=row_idx, column=4, value=date)
+            log_sheet.cell(row=row_idx, column=5, value=count)
+            row_idx += 1
+        row_idx += 1  # пустая строка между блоками
+    
+    # ========== ЗАМЕНЁННЫЕ ЖУРНАЛЫ ==========
+    if log_data.get('replaced'):
+        log_sheet.cell(row=row_idx, column=1, value="ЗАМЕНЁННЫЕ ЖУРНАЛЫ")
+        row_idx += 1
+        for old_journal, new_journal, old_source, old_date, old_count, new_source, new_date, new_count in log_data['replaced']:
+            # ККС журнала (один раз)
+            log_sheet.cell(row=row_idx, column=2, value=old_journal)
+            # Было: источник, дата, количество
+            log_sheet.cell(row=row_idx, column=3, value=f"было: {old_source}, {old_date}, {old_count} кабелей")
+            # Стало: источник, дата, количество
+            log_sheet.cell(row=row_idx, column=4, value=f"стало: {new_source}, {new_date}, {new_count} кабелей")
+            row_idx += 1
+        row_idx += 1
+    
+    # ========== КОНВЕРТИРОВАННЫЕ ФАЙЛЫ ==========
+    if log_data.get('converted'):
+        log_sheet.cell(row=row_idx, column=1, value="КОНВЕРТИРОВАНЫ .doc → .docx")
+        row_idx += 1
+        for old_name, new_name in log_data['converted']:
+            log_sheet.cell(row=row_idx, column=2, value=f"{old_name} → {new_name}")
+            row_idx += 1
+        row_idx += 1
+    
+    # ========== ПРОПУЩЕННЫЕ ЖУРНАЛЫ ==========
+    if log_data.get('skipped'):
+        log_sheet.cell(row=row_idx, column=1, value="ПРОПУЩЕНЫ (НЕ ДОБАВЛЕНЫ В БАЗУ)")
+        row_idx += 1
+        for journal, reason in log_data['skipped']:
+            log_sheet.cell(row=row_idx, column=2, value=journal)
+            log_sheet.cell(row=row_idx, column=3, value=reason)
+            row_idx += 1
+    
+    # Жирный шрифт для заголовков
+    from openpyxl.styles import Font
+    bold_font = Font(bold=True)
+    for col in range(1, 6):
+        log_sheet.cell(row=1, column=col).font = bold_font
+    
+    # Заголовки блоков тоже жирным
+    for row in range(2, row_idx):
+        cell_value = log_sheet.cell(row=row, column=1).value
+        if cell_value and cell_value in ["ДОБАВЛЕНЫ НОВЫЕ ЖУРНАЛЫ", "ЗАМЕНЁННЫЕ ЖУРНАЛЫ", 
+                                          "КОНВЕРТИРОВАНЫ .doc → .docx", "ПРОПУЩЕНЫ (НЕ ДОБАВЛЕНЫ В БАЗУ)"]:
+            log_sheet.cell(row=row, column=1).font = bold_font
+
+
+def build_cable_database(journals_dir, output_dir, progress_callback=None):
     """
     Создаёт кабельную базу из журналов в указанной папке.
     Args:
@@ -193,7 +401,17 @@ def build_cable_database(journals_dir, output_dir, progress_callback=None, sourc
         source_type: источник данных ('СУПИР' или 'ВК')
     """
     print("\nЗапуск build_cable_database...")
-    print(f"   📌 Источник журналов: {source_type}")
+
+    source = '-'        # Источник информации (из имени файла)
+    file_date = '-'     # Дата источника информации (из имени файла)
+
+    # ========== ИНИЦИАЛИЗАЦИЯ ЛОГА ==========
+    log_entries = []
+    added_journals = []      # (журнал, источник, дата, кол-во кабелей)
+    replaced_journals = []   # (старый_журнал, новый_журнал, источник, дата, кол-во кабелей)
+    converted_files = []     # (старое_имя, новое_имя)
+    skipped_journals = []    # (журнал, причина)
+    # ========================================
 
     # Загрузка границ зданий из JSON
     with open('KKS_building_bounds.json', 'r', encoding='utf-8') as f:
@@ -203,27 +421,34 @@ def build_cable_database(journals_dir, output_dir, progress_callback=None, sourc
     b_name = config.BASE_NAME
     current_version = current_version_finder(output_dir, b_name)
     
-    # Получение списка всех журналов (.doc и .docx)
-    journals = take_all_docx_from_dir(journals_dir)
+    # Получение списка всех журналов (.doc и .docx) и информации для логирования 
+    journals, converted = take_all_docx_from_dir(journals_dir)
+    converted_files.extend(converted)
+
 
     # journals_names = [j.stem for j in journals] if journals else []
 
     journals_names = []
     if journals:
         for j in journals:
-            # очистка названия КЖ перед записью
+            # очистка названия КЖ перед записью в список journals_names
             jrn = j.stem
             match = regular_journal_kks.search(jrn)
             if match:
                 jrn = match.group()
             journals_names.append(jrn)
-            jrn = ''
 
     total_journals = len(journals)
     
     # Отчёт о прогрессе: найдено журналов
     if progress_callback:
         progress_callback(0, total_journals, f"Найдено {total_journals} журналов")
+
+
+    # ========== ЗАГРУЗКА ПРИМЕЧАНИЙ ИЗ СТАРОЙ БАЗЫ ==========
+    old_base_path = Path(output_dir) / f"{b_name}{current_version - 1}.xlsx" if current_version > 1 else None
+    old_notes = load_old_notes(old_base_path, journals_names)
+    # ==========================================================
 
     # Создание новой базы
     wb = Workbook()
@@ -238,11 +463,23 @@ def build_cable_database(journals_dir, output_dir, progress_callback=None, sourc
         sheetWrite.column_dimensions[get_column_letter(col)].width = head[2]
     sheetWrite.freeze_panes = 'A2'
 
+    # ========== КОПИРОВАНИЕ ЛИСТА 'ОБЪЕДИНЕННЫЕ КАБЕЛИ' ==========
+    old_base_path = Path(output_dir) / f"{b_name}{current_version - 1}.xlsx" if current_version > 1 else None
+    if old_base_path and old_base_path.exists():
+        copy_merged_sheet_from_old_base(old_base_path, wb)
+    else:
+        # Создаём пустой лист с одной колонкой ПОСЛЕ активного листа
+        merged_sheet = wb.create_sheet("Объединенные кабели", index=1)  # index=1 означает после первого листа
+        merged_sheet.cell(row=1, column=1, value="ККС")
+        merged_sheet.column_dimensions['A'].width = 30
+        print("   ℹ️ Создан пустой лист 'Объединенные кабели'.")
+    # =============================================================  
+
     today = date.today()
     date_string = today.strftime("%Y.%m.%d")
     
     rowWrite = 2
-    
+
     # ----- Копирование из старой версии базы -----
     if current_version > 1:
         old_path = Path(output_dir) / f"{b_name}{current_version - 1}.xlsx"
@@ -286,6 +523,7 @@ def build_cable_database(journals_dir, output_dir, progress_callback=None, sourc
                 if not j_raw_content:
                     if progress_callback:
                         progress_callback(i, total_journals, f"Нет данных в {journal.stem}")
+                    skipped_journals.append((journal.stem, "Нет данных в документе"))
                     continue
                 
                 # =================================
@@ -296,23 +534,32 @@ def build_cable_database(journals_dir, output_dir, progress_callback=None, sourc
                     j_raw_content = j_raw_content[:-1]
                 # =================================
 
+                # Разбор имени файла журнала (делаем один раз до цикла по строкам)
+                file_stem = journal.stem
+                file_match = regular_filename.match(file_stem)
+
+                if file_match:
+                    journal_kks = file_match.group('kks') or ''
+                    source = file_match.group('source') or '-'
+                    file_date = file_match.group('date') or '-'
+                else:
+                    # Если не удалось разобрать по новому формату - пытаемся по старому
+                    kks_match = regular_journal_kks.search(file_stem)
+                    journal_kks = kks_match.group() if kks_match else file_stem
+                    source = '-'
+                    file_date = '-'
+
+                rows_processed = 0  # счётчик успешно обработанных кабелей из одного журнала, которые были успешно извлечены из Word-таблицы, распаршены и добавлены в Excel-базу.	В логе (лист "Лог") — показывает, сколько кабелей было добавлено из каждого журнала
+
                 for raw_row in j_raw_content:
                     raw_row = remove_plus_from_numbers(raw_row)
                     
                     processed_row = None
 
                     if len(raw_row) > 6:
-                        # очистка названия КЖ перед записью
-                        jrn = journal.stem
-                        match = regular_journal_kks.search(jrn)
-                        if match:
-                            jrn = match.group()
-                        raw_row.insert(0, jrn)
-                        jrn = ''
-
+                        # Вставляем ККС журнала в первую ячейку
+                        raw_row.insert(0, journal_kks)
                         processed_row = row_parser(raw_row, building_bounds)
-
-                    rows_processed = 0
 
                     if processed_row:
                         processed_row.append(date_string)
@@ -321,10 +568,19 @@ def build_cable_database(journals_dir, output_dir, progress_callback=None, sourc
                         for idx, val in enumerate(processed_row, start=1):
                             sheetWrite.cell(row=rowWrite, column=idx, value=val)
                         
-                        sheetWrite.cell(row=rowWrite, column=24, value=revision)
-                        sheetWrite.cell(row=rowWrite, column=27, value=source_type)
-                        sheetWrite.cell(row=rowWrite, column=30, value=str(raw_row))
+                        sheetWrite.cell(row=rowWrite, column=24, value=revision)      # Номер ревизии (из колонтитула)
+                        sheetWrite.cell(row=rowWrite, column=26, value=source)        # Источник информации (из имени файла)
+                        sheetWrite.cell(row=rowWrite, column=25, value=file_date)     # Дата ревизии (из имени файла)
+                        sheetWrite.cell(row=rowWrite, column=30, value=str(raw_row))  # Raw-данные
                         
+                        # ========== ПЕРЕНЕС ПРИМЕЧАНИЯ ИЗ СТАРОЙ БАЗЫ ==========
+                        cable_kks = processed_row[2]  # ККС кабеля (индекс 2 в processed_row)
+                        if cable_kks:
+                            key = (journal_kks, cable_kks)
+                            if key in old_notes:
+                                sheetWrite.cell(row=rowWrite, column=35, value=old_notes[key])  # колонка 35 = 'Примечание'
+                        # ========================================================
+
                         # Расчёт минимальной длины кабеля
                         try:
                             # Функция для преобразования координаты (замена запятой на точку)
@@ -423,43 +679,144 @@ def build_cable_database(journals_dir, output_dir, progress_callback=None, sourc
                 if progress_callback:
                     progress_callback(i + 1, total_journals, f"Готово: {journal.stem} ({rows_processed} строк)")
 
+
+                    # ========== СОХРАНЕНИЕ ИНФОРМАЦИИ ДЛЯ ЛОГА ==========
+                    # Проверяем, был ли этот журнал в старой базе
+                    was_in_old = False
+                    old_journal_name = None
+                    old_source = '-'
+                    old_date = '-'
+                    old_count = 0
+                    
+                    if current_version > 1 and old_base_path and old_base_path.exists():
+                        # Проверяем наличие журнала в старой базе и собираем его данные
+                        rb = load_workbook(old_base_path, data_only=True)
+                        sheetRead = rb.active
+                        
+                        # Находим индексы нужных колонок в старой базе
+                        src_col = None
+                        date_col = None
+                        for col_idx, cell in enumerate(sheetRead[1], start=1):
+                            if cell.value:
+                                col_name = str(cell.value)
+                                if 'Источник информации' in col_name:
+                                    src_col = col_idx
+                                elif 'Дата ревизии' in col_name:
+                                    date_col = col_idx
+                        
+                        # Ищем журнал и собираем данные
+                        for row in sheetRead.iter_rows(min_row=2, values_only=True):
+                            if row and row[0] and str(row[0]).strip() == journal_kks:
+                                was_in_old = True
+                                old_journal_name = str(row[0]).strip()
+                                # Собираем данные из старой базы
+                                if src_col and row[src_col - 1]:
+                                    old_source = str(row[src_col - 1]).strip()
+                                if date_col and row[date_col - 1]:
+                                    old_date = str(row[date_col - 1]).strip()
+                                # Считаем количество кабелей в старом журнале
+                                old_count = sum(1 for r in sheetRead.iter_rows(min_row=2, values_only=True) 
+                                               if r and r[0] and str(r[0]).strip() == journal_kks)
+                                break
+                        rb.close()
+                    
+                    if was_in_old:
+                        replaced_journals.append((old_journal_name, journal_kks, old_source, old_date, old_count, source, file_date, rows_processed))
+                    else:
+                        added_journals.append((journal_kks, source, file_date, rows_processed))
+                    # ====================================================
+
             except Exception as e:
                 print(f"Ошибка обработки {journal.stem}: {e}")
                 if progress_callback:
                     progress_callback(i + 1, total_journals, f"Ошибка в {journal.stem}: {str(e)[:50]}", is_error=True)
+                skipped_journals.append((journal.stem, f"Ошибка: {str(e)[:100]}"))
     
 
 
     # ========== ПРОВЕРКА ЖУРНАЛОВ В ОТВЕТНОЙ ЧАСТИ ==========
-    # 1. Составляем список set всех ККС журналов во всей таблице (первый столбец)
-    all_journals_in_table = set()
-    for row in range(2, rowWrite):  # rowWrite - это следующая строка после последней заполненной
-        all_journals_in_table.add(sheetWrite.cell(row=row, column=1).value)
-    print(f"   📋 Найдено уникальных журналов в таблице: {len(all_journals_in_table)}")
-    
-    # 2. Проверяем кабели, у которых есть ККС журнала в столбце 33
+    # 1. Составляем словарь {полный_ККС: дата_ревизии} из таблицы
+    journal_date_map = {}
+    for row in range(2, rowWrite):
+        journal_kks = sheetWrite.cell(row=row, column=1).value
+        date_val = sheetWrite.cell(row=row, column=25).value  # колонка 25 = 'Дата ревизии'
+        if journal_kks:
+            journal_kks = str(journal_kks).strip()
+            # Если дата есть, используем её, иначе ставим '-'
+            date_str = str(date_val).strip() if date_val else '-'
+            journal_date_map[journal_kks] = date_str
+
+    print(f"   📋 Найдено уникальных журналов в таблице: {len(journal_date_map)}")
+
+    # 2. Функция поиска ККС в словаре (с поддержкой краткой формы)
+    def find_journal_in_map(kks_to_find, journal_map):
+        """
+        Ищет ККС в словаре.
+        Сначала пробует точное совпадение.
+        Если не найдено, ищет, не является ли kks_to_find префиксом (краткой формой) какого-либо ключа.
+        Возвращает: (найденный_полный_ККС, дата) или (None, None)
+        """
+        # 1. Точное совпадение
+        if kks_to_find in journal_map:
+            return kks_to_find, journal_map[kks_to_find]
+        
+        # 2. Поиск как краткой формы (kks_to_find является префиксом полного ККС)
+        for full_kks, date_val in journal_map.items():
+            if full_kks.startswith(kks_to_find):
+                return full_kks, date_val
+        
+        return None, None
+
+    # 3. Проверяем каждую строку с ответной частью (столбец 33)
     for row in range(2, rowWrite):
         ref_jrn = sheetWrite.cell(row=row, column=33).value
         if ref_jrn:
             ref_journals = str(ref_jrn).split()
-            missing = []
+            found_info = []
+            all_found = True
             
             for r in ref_journals:
-                # Точное совпадение или подстрока
-                if r in all_journals_in_table:
-                    continue
-                # Проверяем, содержится ли r как подстрока в каком-либо журнале
-                if any(r in journal for journal in all_journals_in_table if journal):
-                    continue
-                missing.append(r)
+                found_kks, found_date = find_journal_in_map(r, journal_date_map)
+                if found_kks:
+                    found_info.append(f"{found_kks} ({found_date})")
+                else:
+                    all_found = False
             
-            if missing:
-                sheetWrite.cell(row=row, column=34, value='нет в базе')
+            if all_found and found_info:
+                # Все журналы найдены
+                result = 'есть в базе: ' + '; '.join(found_info)
+                sheetWrite.cell(row=row, column=34, value=result)
+            elif found_info and not all_found:
+                # Часть найдена, часть нет
+                result = 'частично: ' + '; '.join(found_info)
+                sheetWrite.cell(row=row, column=34, value=result)
             else:
-                sheetWrite.cell(row=row, column=34, value='есть в базе')
-    
+                # Ни один не найден
+                sheetWrite.cell(row=row, column=34, value='нет в базе')
     # ========== КОНЕЦ БЛОКА ПРОВЕРКИ ==========
 
+
+    # ========== ДОБАВЛЕНИЕ КАБЕЛЕЙ ИЗ MERGED_LIST.JSON ==========
+    old_base_path = Path(output_dir) / f"{b_name}{current_version - 1}.xlsx" if current_version > 1 else None
+    if not (old_base_path and old_base_path.exists()):
+        print("\n🔗 Добавление объединённых кабелей из merged_list.json...")
+        merged_sheet = wb['Объединенные кабели']
+        add_merged_cables_from_json('merged_list.json', merged_sheet)
+    else:
+        print("\n   ℹ️ Лист 'Объединенные кабели' скопирован из старой базы. Добавление из merged_list.json пропущено.")
+    # ============================================================
+
+
+    # ========== СОЗДАНИЕ ЛИСТА ЛОГА ==========
+    log_data = {
+        'added': added_journals,
+        'replaced': replaced_journals,
+        'converted': converted_files,
+        'skipped': skipped_journals
+    }
+    create_log_sheet(wb, log_data)
+    # =========================================
+    
 
     # Применяем автофильтр и сохраняем
     sheetWrite.auto_filter.ref = sheetWrite.dimensions
@@ -467,9 +824,9 @@ def build_cable_database(journals_dir, output_dir, progress_callback=None, sourc
     wb.save(output_path)
     
     # ========== ОТМЕТКА ОБЪЕДИНЁННЫХ КАБЕЛЕЙ ==========
-    # Пытаемся отметить кабели из merged_list.json как "Объединён"
+    # Отмечаем кабели по данным из листа 'Объединенные кабели'
     print("\n🏷️ Отметка объединённых кабелей...")
-    mark_merged_cables(output_path, 'merged_list.json')
+    mark_merged_cables(output_path)
     # ========== КОНЕЦ БЛОКА ==========
     
     if progress_callback:

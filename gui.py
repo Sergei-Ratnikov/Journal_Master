@@ -17,13 +17,13 @@ class CableParserGUI:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("Кабельный журнал - Парсер баз данных")
-        self.root.geometry("650x600")  # увеличил высоту для нового элемента
+        self.root.geometry("650x550")  # Уменьшил высоту, т.к. убрали блок
         self.root.resizable(False, False)
         self.root.configure(bg="#f0f0f0")
         
         self.journals_dir = tk.StringVar()
         self.output_dir = tk.StringVar()
-        self.source_type = tk.StringVar(value="СУПИР")  # значение по умолчанию
+        # УДАЛЯЕМ: self.source_type = tk.StringVar(value="СУПИР")
         self.open_folder = tk.BooleanVar(value=True)
         self.is_running = False
         self.last_saved_file = None
@@ -69,26 +69,8 @@ class CableParserGUI:
         tk.Button(output_frame, text="Выбрать папку", command=self.select_output_dir,
                  bg="#3498db", fg="white", font=("Arial", 9), padx=10, cursor="hand2").pack(side="right")
         
-        # ========== НОВЫЙ БЛОК: ВЫПАДАЮЩИЙ СПИСОК "ИСТОЧНИК ЖУРНАЛОВ" ==========
-        source_frame = tk.LabelFrame(main_frame, text="📌 Источник журналов", 
-                                     padx=10, pady=10, font=("Arial", 10, "bold"), bg="#f0f0f0")
-        source_frame.pack(fill="x", pady=(0, 15))
-        
-        # Создаём выпадающий список (Combobox)
-        self.source_combo = ttk.Combobox(
-            source_frame,
-            textvariable=self.source_type,
-            values=["СУПИР", "ВК"],
-            state="readonly",  # только для чтения (нельзя вводить свои значения)
-            font=("Arial", 10),
-            width=20
-        )
-        self.source_combo.pack(pady=5)
-        
-        # Подпись под выпадающим списком
-        tk.Label(source_frame, text="Выберите источник данных для новых журналов",
-                font=("Arial", 8), fg="#7f8c8d", bg="#f0f0f0").pack()
-        # ========== КОНЕЦ НОВОГО БЛОКА ==========
+        # ========== УДАЛЯЕМ ВЕСЬ БЛОК С ВЫПАДАЮЩИМ СПИСКОМ ==========
+        # source_frame = tk.LabelFrame(...) - ЭТОТ БЛОК УДАЛЯЕМ ЦЕЛИКОМ
         
         # Чекбокс
         checkbox_frame = tk.Frame(main_frame, bg="#f0f0f0")
@@ -205,7 +187,7 @@ class CableParserGUI:
         self.progress_detail.config(text="Подготовка к обработке...", fg="#2c3e50")
         self.update_status("⏳ Обработка журналов...")
         
-        # Запускаем в отдельном потоке, передавая выбранный источник
+        # Запускаем в отдельном потоке, УБИРАЕМ ПАРАМЕТР source_type
         thread = threading.Thread(target=self._process, daemon=True)
         thread.start()
     
@@ -215,8 +197,8 @@ class CableParserGUI:
             build_cable_database(
                 self.journals_dir.get(), 
                 self.output_dir.get(),
-                progress_callback=self.update_progress,
-                source_type=self.source_type.get()  # передаём выбранный источник
+                progress_callback=self.update_progress
+                # УДАЛЯЕМ: source_type=self.source_type.get()
             )
             self.root.after(0, self._on_success, start_time)
         except Exception as e:
@@ -236,7 +218,6 @@ class CableParserGUI:
             f"✅ Обработка завершена!\n\n"
             f"📁 Журналы: {self.journals_dir.get()}\n"
             f"💾 База сохранена в: {self.output_dir.get()}\n"
-            f"📌 Источник: {self.source_type.get()}\n"
             f"⏱️ Время: {duration:.2f} сек")
     
     def _on_error(self, error_msg):
