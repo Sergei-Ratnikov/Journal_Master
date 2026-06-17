@@ -790,9 +790,9 @@ def build_cable_database(journals_dir, output_dir, progress_callback=None):
                 # Часть найдена, часть нет
                 result = 'частично: ' + '; '.join(found_info)
                 sheetWrite.cell(row=row, column=34, value=result)
-            else:
+            # else:
                 # Ни один не найден
-                sheetWrite.cell(row=row, column=34, value='нет в базе')
+                # sheetWrite.cell(row=row, column=34, value='нет в базе')
     # ========== КОНЕЦ БЛОКА ПРОВЕРКИ ==========
 
 
