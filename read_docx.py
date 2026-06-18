@@ -1,6 +1,6 @@
-# doc_utils.py
+# read_docx.py
 '''
-doc_utils.py
+read_docx.py
 Все функции для работы с Word-документами (.doc, .docx)
 Извлечение таблиц, конвертация, перемещение файлов
 '''
@@ -24,7 +24,7 @@ def make_hashable(item):
 
 def is_subset_with_lists(list1, list2):
     """Проверяет, является ли list1 подмножеством list2 с учётом вложенных списков.
-       Используется в doc_utils для склейки разорванных строк."""
+       Используется для склейки разорванных строк."""
     set1 = {make_hashable(x) for x in list1}
     set2 = {make_hashable(x) for x in list2}
     return set1.issubset(set2)

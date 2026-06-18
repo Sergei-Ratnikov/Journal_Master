@@ -1,4 +1,4 @@
-# gui.py
+# cable_master.py
 """
 Графический интерфейс для программы парсинга кабельных журналов.
 Вкладка 1: Парсер баз данных (существующий функционал)
@@ -27,7 +27,7 @@ class CableParserGUI:
         # Переменные для вкладки 1 (Парсер)
         self.journals_dir = tk.StringVar()
         self.output_dir = tk.StringVar()
-        self.open_folder = tk.BooleanVar(value=True)
+        self.open_folder = tk.BooleanVar(value=True)  # ← ПЕРЕМЕННАЯ
         
         # Переменные для вкладки 2 (Поиск ответных частей)
         self.matcher_db_path = tk.StringVar()
@@ -121,8 +121,6 @@ class CableParserGUI:
                 font=("Arial", 8), fg="#7f8c8d", bg="#ecf0f1").pack(expand=True)
     
     # ========== ВКЛАДКА 1: ПАРСЕР БАЗ ==========
-    
-        # ========== ВКЛАДКА 1: ПАРСЕР БАЗ ==========
     def setup_parser_tab(self):
         """Настройка вкладки 'Парсер баз данных'"""
         main_frame = tk.Frame(self.tab_parser, padx=20, pady=20, bg="#f0f0f0")
@@ -155,7 +153,7 @@ class CableParserGUI:
         self.open_folder_checkbox = tk.Checkbutton(
             checkbox_frame, 
             text="📂 Открыть папку с результатом после обработки",
-            variable=self.open_folder,
+            variable=self.open_folder,  # ← используем переменную
             font=("Arial", 9),
             bg="#f0f0f0",
             fg="#2c3e50",
@@ -192,73 +190,6 @@ class CableParserGUI:
                                    command=self.show_about, bg="#3498db", fg="white",
                                    font=("Arial", 10, "bold"), height=2, cursor="hand2")
         self.about_btn.pack(side="right")
-        
-        # Статус
-        self.status_label = tk.Label(main_frame, text="Готов к работе. Выберите папки и нажмите 'Запустить'.", 
-                                     font=("Arial", 9), fg="#7f8c8d", bg="#f0f0f0", wraplength=550, justify="center")
-        self.status_label.pack()
-
-
-        """Настройка вкладки 'Парсер баз данных'"""
-        main_frame = tk.Frame(self.tab_parser, padx=20, pady=20, bg="#f0f0f0")
-        main_frame.pack(fill="both", expand=True)
-        
-        # Папка с журналами
-        journals_frame = tk.LabelFrame(main_frame, text="📄 Исходные журналы", 
-                                       padx=10, pady=10, font=("Arial", 10, "bold"), bg="#f0f0f0")
-        journals_frame.pack(fill="x", pady=(0, 15))
-        
-        tk.Entry(journals_frame, textvariable=self.journals_dir, 
-                font=("Arial", 10), state="readonly", bg="white").pack(side="left", fill="x", expand=True, padx=(0, 10))
-        tk.Button(journals_frame, text="Выбрать папку", command=self.select_journals_dir,
-                 bg="#3498db", fg="white", font=("Arial", 9), padx=10, cursor="hand2").pack(side="right")
-        
-        # Папка для сохранения
-        output_frame = tk.LabelFrame(main_frame, text="💾 Сохранение базы", 
-                                     padx=10, pady=10, font=("Arial", 10, "bold"), bg="#f0f0f0")
-        output_frame.pack(fill="x", pady=(0, 15))
-        
-        tk.Entry(output_frame, textvariable=self.output_dir, 
-                font=("Arial", 10), state="readonly", bg="white").pack(side="left", fill="x", expand=True, padx=(0, 10))
-        tk.Button(output_frame, text="Выбрать папку", command=self.select_output_dir,
-                 bg="#3498db", fg="white", font=("Arial", 9), padx=10, cursor="hand2").pack(side="right")
-        
-        # Чекбокс
-        checkbox_frame = tk.Frame(main_frame, bg="#f0f0f0")
-        checkbox_frame.pack(fill="x", pady=(0, 10))
-        
-        self.open_folder_checkbox = tk.Checkbutton(
-            checkbox_frame, 
-            text="📂 Открыть папку с результатом после обработки",
-            variable=self.open_folder,
-            font=("Arial", 9),
-            bg="#f0f0f0",
-            fg="#2c3e50",
-            anchor="w",
-            cursor="hand2"
-        )
-        self.open_folder_checkbox.pack(side="left")
-        
-        # Прогресс
-        progress_frame = tk.LabelFrame(main_frame, text="📊 Прогресс обработки", 
-                                       padx=10, pady=10, font=("Arial", 10, "bold"), bg="#f0f0f0")
-        progress_frame.pack(fill="x", pady=(0, 15))
-        
-        self.progress_bar = ttk.Progressbar(progress_frame, mode="determinate")
-        self.progress_bar.pack(fill="x", pady=(0, 5))
-        
-        self.progress_percent = tk.Label(progress_frame, text="0%", font=("Arial", 9), bg="#f0f0f0", fg="#2c3e50")
-        self.progress_percent.pack()
-        
-        self.progress_detail = tk.Label(progress_frame, text="Ожидание запуска...", 
-                                        font=("Arial", 8), bg="#f0f0f0", fg="#7f8c8d")
-        self.progress_detail.pack(pady=(5, 0))
-        
-        # Кнопка запуска
-        self.run_btn = tk.Button(main_frame, text="🚀 ЗАПУСТИТЬ ОБРАБОТКУ",
-                                 command=self.run_parser, bg="#27ae60", fg="white",
-                                 font=("Arial", 12, "bold"), height=2, cursor="hand2")
-        self.run_btn.pack(fill="x", pady=(0, 15))
         
         # Статус
         self.status_label = tk.Label(main_frame, text="Готов к работе. Выберите папки и нажмите 'Запустить'.", 
@@ -340,7 +271,6 @@ class CableParserGUI:
     
     def update_status(self, message, is_error=False):
         """Обновляет статус на активной вкладке"""
-        # Определяем, какая вкладка активна
         current_tab = self.notebook.select()
         if current_tab == str(self.tab_parser):
             if is_error:
@@ -368,7 +298,7 @@ class CableParserGUI:
         
         self.root.update_idletasks()
     
-    def open_folder(self, folder_path):
+    def open_folder_path(self, folder_path):  # ← МЕТОД (другое имя!)
         """Открывает папку в проводнике"""
         if not folder_path:
             return
@@ -378,16 +308,6 @@ class CableParserGUI:
             self.update_status(f"Открыта папка: {folder_path}")
         else:
             self.update_status(f"Папка не существует: {folder_path}", is_error=True)
-    
-    def paste_from_clipboard(self):
-        """Вставляет текст из буфера обмена в поле ККС журнала"""
-        try:
-            clipboard_text = self.root.clipboard_get()
-            if clipboard_text:
-                self.matcher_journal_kks.set(clipboard_text.strip())
-                self.update_status("✅ ККС вставлен из буфера обмена")
-        except:
-            self.update_status("❌ Не удалось получить данные из буфера обмена", is_error=True)
     
     # ========== ФУНКЦИИ ДЛЯ ВКЛАДКИ 1 (ПАРСЕР) ==========
     
@@ -446,8 +366,8 @@ class CableParserGUI:
         self.update_status(f"✅ Обработка завершена! Время: {duration:.2f} сек")
         self.progress_detail.config(text="Готово! База данных создана.", fg="#27ae60")
         
-        if self.open_folder.get():
-            self.root.after(500, lambda: self.open_folder(self.output_dir.get()))
+        if self.open_folder.get():  # ← проверяем переменную
+            self.root.after(500, lambda: self.open_folder_path(self.output_dir.get()))  # ← вызываем метод
         
         messagebox.showinfo("Готово!", 
             f"✅ Обработка завершена!\n\n"
@@ -527,7 +447,7 @@ class CableParserGUI:
         
         if self.matcher_open_folder.get():
             output_dir = os.path.dirname(self.matcher_output_path.get())
-            self.root.after(500, lambda: self.open_folder(output_dir))
+            self.root.after(500, lambda: self.open_folder_path(output_dir))  # ← вызываем метод
         
         messagebox.showinfo("Готово!", 
             f"✅ Поиск завершён!\n\n"
@@ -544,7 +464,6 @@ class CableParserGUI:
     
     def run(self):
         self.root.mainloop()
-
 
 if __name__ == "__main__":
     app = CableParserGUI()
