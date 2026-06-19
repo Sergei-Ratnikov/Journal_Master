@@ -7,6 +7,7 @@
 import json
 import openpyxl
 import re
+import shutil
 from openpyxl import load_workbook, Workbook
 from openpyxl.utils import get_column_letter
 from pathlib import Path
@@ -15,6 +16,7 @@ from docx import Document
 from tqdm import tqdm
 
 from read_docx import take_all_docx_from_dir, extract_all_text_from_docx
+from read_xlsx import take_all_xlsx_from_dir, extract_all_text_from_xlsx
 from cable_parser import row_parser
 import config
 from config import regular_KKS_building, regular_cable_tray, regular_journal_kks, regular_journal_kks_short, regular_filename
@@ -391,6 +393,104 @@ def create_log_sheet(workbook, log_data):
             log_sheet.cell(row=row, column=1).font = bold_font
 
 
+def archive_old_base(old_path):
+    """
+    Перемещает старую версию базы в папку 'Предыдущие версии БД'.
+    
+    Args:
+        old_path: путь к файлу старой базы
+    
+    Returns:
+        bool: True если перемещение выполнено, иначе False
+    """
+    if not old_path or not old_path.exists():
+        return False
+    
+    try:
+        # Создаём папку для архива
+        archive_dir = old_path.parent / "Предыдущие версии БД"
+        archive_dir.mkdir(exist_ok=True)
+        
+        # Формируем путь назначения
+        destination = archive_dir / old_path.name
+        
+        # Если файл с таким именем уже существует, добавляем суффикс
+        if destination.exists():
+            counter = 1
+            while True:
+                new_name = f"{old_path.stem}_{counter}{old_path.suffix}"
+                destination = archive_dir / new_name
+                if not destination.exists():
+                    break
+                counter += 1
+        
+        # Перемещаем файл
+        shutil.move(str(old_path), str(destination))
+        print(f"   📦 Предыдущая версия базы перемещена в: {destination}")
+        return True
+        
+    except Exception as e:
+        print(f"   ⚠️ Ошибка при перемещении старой базы: {e}")
+        return False
+
+
+def archive_processed_journals(journals, journals_dir):
+    """
+    Перемещает все обработанные журналы в папку 'обработанные журналы'.
+    
+    Args:
+        journals: список файлов журналов (Path)
+        journals_dir: исходная папка с журналами
+    
+    Returns:
+        int: количество перемещённых файлов
+    """
+    if not journals:
+        return 0
+    
+    try:
+        # Создаём папку для архива
+        archive_dir = Path(journals_dir) / "Обработанные журналы"
+        archive_dir.mkdir(exist_ok=True)
+        
+        moved_count = 0
+        
+        for journal in journals:
+            try:
+                # Проверяем, что файл существует
+                if not journal.exists():
+                    continue
+                
+                # Формируем путь назначения
+                destination = archive_dir / journal.name
+                
+                # Если файл с таким именем уже существует, добавляем суффикс
+                if destination.exists():
+                    counter = 1
+                    while True:
+                        new_name = f"{journal.stem}_{counter}{journal.suffix}"
+                        destination = archive_dir / new_name
+                        if not destination.exists():
+                            break
+                        counter += 1
+                
+                # Перемещаем файл
+                shutil.move(str(journal), str(destination))
+                moved_count += 1
+                
+            except Exception as e:
+                print(f"   ⚠️ Не удалось переместить {journal.name}: {e}")
+        
+        if moved_count > 0:
+            print(f"   📁 Перемещено {moved_count} журналов в папку 'обработанные журналы'")
+        
+        return moved_count
+        
+    except Exception as e:
+        print(f"   ⚠️ Ошибка при создании папки 'обработанные журналы': {e}")
+        return 0
+
+
 def build_cable_database(journals_dir, output_dir, progress_callback=None):
     """
     Создаёт кабельную базу из журналов в указанной папке.
@@ -421,8 +521,12 @@ def build_cable_database(journals_dir, output_dir, progress_callback=None):
     b_name = config.BASE_NAME
     current_version = current_version_finder(output_dir, b_name)
     
-    # Получение списка всех журналов (.doc и .docx) и информации для логирования 
-    journals, converted = take_all_docx_from_dir(journals_dir)
+    # Получение списка всех журналов (.doc, .docx, .xlsx) и информации для логирования 
+    journals_docx, converted = take_all_docx_from_dir(journals_dir)
+    journals_xlsx, _ = take_all_xlsx_from_dir(journals_dir)
+    
+    # Объединяем списки
+    journals = journals_docx + journals_xlsx
     converted_files.extend(converted)
 
 
@@ -514,25 +618,52 @@ def build_cable_database(journals_dir, output_dir, progress_callback=None):
                 if progress_callback:
                     progress_callback(i, total_journals, f"Обработка: {journal.stem}")
                 
-                # ========== КОНВЕРТАЦИЯ АВТОМАТИЧЕСКОЙ НУМЕРАЦИИ ==========
-                # Сначала конвертируем нумерацию в текст
-                from read_docx import convert_numbering_to_text
-                convert_numbering_to_text(str(journal))
+                # # ========== КОНВЕРТАЦИЯ АВТОМАТИЧЕСКОЙ НУМЕРАЦИИ ==========
+                # from read_docx import convert_numbering_to_text
+                # convert_numbering_to_text(str(journal))
 
-                j_raw_content = extract_all_text_from_docx(Document(journal))
+                # j_raw_content = extract_all_text_from_docx(Document(journal))
+                # if not j_raw_content:
+                #     if progress_callback:
+                #         progress_callback(i, total_journals, f"Нет данных в {journal.stem}")
+                #     skipped_journals.append((journal.stem, "Нет данных в документе"))
+                #     continue
+                
+                # # =================================
+                # # Получение ревизии
+                # revision = ''
+                # if 'revision_' in j_raw_content[-1]:
+                #     revision = j_raw_content[-1][-3:]
+                #     j_raw_content = j_raw_content[:-1]
+                # # =================================
+
+
+                # ========== ОПРЕДЕЛЕНИЕ ТИПА ФАЙЛА И ИЗВЛЕЧЕНИЕ ДАННЫХ ==========
+                file_ext = journal.suffix.lower()
+                revision = ''  # по умолчанию пусто
+                
+                if file_ext == '.xlsx':
+                    # Чтение Excel-журнала (ревизия не извлекается)
+                    j_raw_content = extract_all_text_from_xlsx(str(journal))
+                else:
+                    # Чтение Word-журнала (.docx или .doc)
+                    from read_docx import convert_numbering_to_text
+                    convert_numbering_to_text(str(journal))
+                    j_raw_content = extract_all_text_from_docx(Document(journal))
+                    
+                    # =================================
+                    # Получение ревизии ТОЛЬКО для Word
+                    # =================================
+                    if 'revision_' in j_raw_content[-1]:
+                        revision = j_raw_content[-1][-3:]
+                        j_raw_content = j_raw_content[:-1]
+                    # =================================
+                
                 if not j_raw_content:
                     if progress_callback:
                         progress_callback(i, total_journals, f"Нет данных в {journal.stem}")
                     skipped_journals.append((journal.stem, "Нет данных в документе"))
                     continue
-                
-                # =================================
-                # Получение ревизии
-                revision = ''
-                if 'revision_' in j_raw_content[-1]:
-                    revision = j_raw_content[-1][-3:]
-                    j_raw_content = j_raw_content[:-1]
-                # =================================
 
                 # Разбор имени файла журнала (делаем один раз до цикла по строкам)
                 file_stem = journal.stem
@@ -823,6 +954,19 @@ def build_cable_database(journals_dir, output_dir, progress_callback=None):
     output_path = Path(output_dir) / f"{b_name}{current_version}.xlsx"
     wb.save(output_path)
     
+
+    # ========== АРХИВАЦИЯ СТАРОЙ ВЕРСИИ БАЗЫ ==========
+    if current_version > 1:
+        old_base_path = Path(output_dir) / f"{b_name}{current_version - 1}.xlsx"
+        archive_old_base(old_base_path)
+    # ==================================================
+
+    # ========== ПЕРЕМЕЩЕНИЕ ОБРАБОТАННЫХ ЖУРНАЛОВ ==========
+    if journals:
+        print("\n📁 Перемещение обработанных журналов...")
+        archive_processed_journals(journals, journals_dir)
+    # ========================================================
+
     # ========== ОТМЕТКА ОБЪЕДИНЁННЫХ КАБЕЛЕЙ ==========
     # Отмечаем кабели по данным из листа 'Объединенные кабели'
     print("\n🏷️ Отметка объединённых кабелей...")

@@ -365,13 +365,7 @@ def combine_traces(from_room, to_room, traces_list):
 
 def create_worksheet(wb_out, results, sheet, journal_kks):
     """
-    Создаёт лист 'Рабочий стол' с группами объединяемых кабелей.
-    
-    Args:
-        wb_out: выходная книга Excel
-        results: результаты из первой части (список словарей с num, kks, source, response, note, problems)
-        sheet: исходный лист с данными
-        journal_kks: ККС журнала, который был взят при запуске
+    Создаёт лист 'В работу' с группами объединяемых кабелей.
     """
     # Создаём лист
     ws = wb_out.create_sheet("В работу")
@@ -401,22 +395,37 @@ def create_worksheet(wb_out, results, sheet, journal_kks):
     ws.column_dimensions['L'].width = 50
     ws.freeze_panes = 'A2'
     
+    # ========== ПОСТРОЕНИЕ ИНДЕКСА ==========
+    # Один раз проходим по листу и строим словарь { (kks, journal): row }
+    kks_col = get_column_index(sheet, 'ККС')
+    row_index = {}
+    
+    for row in sheet.iter_rows(min_row=2, values_only=True):
+        if not row:
+            continue
+        row_journal = str(row[0]).strip() if row[0] else ''
+        row_kks = str(row[kks_col - 1]).strip() if kks_col and kks_col <= len(row) and row[kks_col - 1] else ''
+        if row_kks and row_journal:
+            key = (row_kks, row_journal)
+            if key not in row_index:
+                row_index[key] = row
+    # ======================================
+    
     # Получаем список колонок для извлечения данных из исходного листа
     col_map = {}
-    for header in headers[2:]:  # пропускаем '№ п/п' и 'ККС кабеля'
+    for header in headers[2:]:
         col_idx = get_column_index(sheet, header)
         if col_idx:
             col_map[header] = col_idx
     
-    row_idx = 2  # начинаем со второй строки (после заголовков)
+    row_idx = 2
     
-    # Группируем результаты по ККС (только те, у которых есть ответная часть)
+    # Группируем результаты по ККС
     groups = {}
     for result in results:
         kks = result['kks']
         if not kks:
             continue
-        # Пропускаем кабели без ответной части
         if not result['response'] or result['response'] == '-':
             continue
         if kks not in groups:
@@ -434,65 +443,45 @@ def create_worksheet(wb_out, results, sheet, journal_kks):
     
     # Обрабатываем каждую группу
     for kks, group_data in groups.items():
-        # 1. Собираем все кабели для этого ККС из исходного листа
         cables_data = []
         
-        # Сначала добавляем кабель из исходного журнала (головной)
-        for row in sheet.iter_rows(min_row=2, values_only=True):
-            if not row:
-                continue
-            row_journal = str(row[0]).strip() if row[0] else ''
-            row_kks = str(row[get_column_index(sheet, 'ККС') - 1]).strip() if row[get_column_index(sheet, 'ККС')] else ''
-            if row_kks == kks and row_journal == journal_kks:
-                cables_data.append({
-                    'journal': row_journal,
-                    'is_source': True,
-                    'row': row
-                })
-                break
+        # Кабель из исходного журнала — ищем по индексу
+        source_key = (kks, journal_kks)
+        if source_key in row_index:
+            cables_data.append({
+                'journal': journal_kks,
+                'is_source': True,
+                'row': row_index[source_key]
+            })
         
-        # Затем добавляем все ответные кабели
+        # Ответные кабели — ищем по индексу
         for resp_info in group_data['cables']:
             resp_journal = resp_info['response'].split(' (')[0] if resp_info['response'] and resp_info['response'] != '-' else ''
             if not resp_journal:
                 continue
-            for row in sheet.iter_rows(min_row=2, values_only=True):
-                if not row:
-                    continue
-                row_journal = str(row[0]).strip() if row[0] else ''
-                row_kks = str(row[get_column_index(sheet, 'ККС') - 1]).strip() if row[get_column_index(sheet, 'ККС')] else ''
-                if row_kks == kks and row_journal == resp_journal:
-                    cables_data.append({
-                        'journal': row_journal,
-                        'is_source': False,
-                        'row': row
-                    })
-                    break
+            resp_key = (kks, resp_journal)
+            if resp_key in row_index:
+                cables_data.append({
+                    'journal': resp_journal,
+                    'is_source': False,
+                    'row': row_index[resp_key]
+                })
         
-        # 2. Записываем все кабели группы
+        # Записываем все кабели группы
         for idx, cable in enumerate(cables_data):
             row = cable['row']
             
-            # № п/п — только для первого кабеля в группе
             if idx == 0:
                 ws.cell(row=row_idx, column=1, value=group_data['num'])
-                
-                # Закрашиваем жёлтым ячейки помещения у первого кабеля
                 yellow_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
-                # Откуда помещение — колонка 7
                 ws.cell(row=row_idx, column=7).fill = yellow_fill
-                # Куда помещение — колонка 9
                 ws.cell(row=row_idx, column=9).fill = yellow_fill
             else:
                 ws.cell(row=row_idx, column=1, value='')
             
-            # ККС — для всех кабелей группы
             ws.cell(row=row_idx, column=2, value=kks)
-            
-            # Журнал
             ws.cell(row=row_idx, column=3, value=cable['journal'])
             
-            # Остальные поля
             col_mapping = {
                 4: 'Марка',
                 5: 'Сечение',
@@ -512,15 +501,12 @@ def create_worksheet(wb_out, results, sheet, journal_kks):
             
             row_idx += 1
         
-        # 3. Добавляем строку "Объединенный"
+        # Строка "Объединенный"
         if cables_data:
-            # Берём первый кабель как основу
             first_row = cables_data[0]['row']
-
             ws.cell(row=row_idx, column=2, value=kks)
             ws.cell(row=row_idx, column=3, value="Объединенный")
             
-            # Копируем данные из первого кабеля (кроме длины и трассы)
             col_mapping_merged = {
                 4: 'Марка',
                 5: 'Сечение',
@@ -536,7 +522,6 @@ def create_worksheet(wb_out, results, sheet, journal_kks):
                     val = first_row[col_map[header_name] - 1] if col_map[header_name] <= len(first_row) else ''
                     ws.cell(row=row_idx, column=col_num, value=str(val).strip() if val else '')
             
-            # Суммируем длины
             total_length = 0.0
             for cable in cables_data:
                 row = cable['row']
@@ -548,18 +533,15 @@ def create_worksheet(wb_out, results, sheet, journal_kks):
                         pass
             ws.cell(row=row_idx, column=11, value=round(total_length, 2) if total_length > 0 else '')
             
-            # Объединяем трассы
             traces = []
             from_room = ''
             to_room = ''
-            
             for idx, cable in enumerate(cables_data):
                 row = cable['row']
                 if 'Трасса' in col_map:
                     trace_val = row[col_map['Трасса'] - 1] if col_map['Трасса'] <= len(row) else ''
                     if trace_val:
                         traces.append(str(trace_val).strip())
-                # Берём помещения из первого кабеля
                 if idx == 0:
                     if 'Откуда помещение' in col_map:
                         from_room = row[col_map['Откуда помещение'] - 1] if col_map['Откуда помещение'] <= len(row) else ''
@@ -568,12 +550,11 @@ def create_worksheet(wb_out, results, sheet, journal_kks):
             
             merged_trace = combine_traces(from_room, to_room, traces) if traces else ''
             ws.cell(row=row_idx, column=12, value=merged_trace)
-            
             row_idx += 1
         
-        # Пропускаем строку после группы
         row_idx += 1
-
+    
+    return ws
 
 def process_journal(excel_path, journal_kks, output_path):
     """
@@ -601,6 +582,19 @@ def process_journal(excel_path, journal_kks, output_path):
     
     if kks_col is None:
         raise ValueError("Колонка 'ККС' не найдена")
+    
+    # ========== ПОСТРОЕНИЕ ИНДЕКСА (ОДИН РАЗ) ==========
+    row_index = {}
+    for r in sheet.iter_rows(min_row=2, values_only=True):
+        if not r:
+            continue
+        row_journal = str(r[0]).strip() if r[0] else ''
+        row_kks = str(r[kks_col - 1]).strip() if kks_col and kks_col <= len(r) and r[kks_col - 1] else ''
+        if row_kks and row_journal:
+            key = (row_kks, row_journal)
+            if key not in row_index:
+                row_index[key] = r
+    # ================================================
     
     # Создаём выходной файл
     wb_out = Workbook()
@@ -640,11 +634,10 @@ def process_journal(excel_path, journal_kks, output_path):
         cable_kks = str(row[kks_col - 1]).strip() if kks_col <= len(row) and row[kks_col - 1] else ''
         if not cable_kks:
             continue
-        
+
         # Получаем информацию об исходном журнале
         src_source, src_date = get_journal_info(sheet, journal_kks, row_idx)
         src_info = f"{journal_kks} ({src_source}, {src_date})"
-        
         note = str(row[note_col - 1]).strip() if note_col and note_col <= len(row) and row[note_col - 1] else ''
         
         # Ищем ВСЕ ответные кабели во всей базе
@@ -654,26 +647,17 @@ def process_journal(excel_path, journal_kks, output_path):
             # Сортируем по журналу для стабильности
             found_cables.sort(key=lambda x: x[0])
             
-            first_result_idx = None
-            temp_results = []
-            
             for idx, (resp_journal, resp_source, resp_date, resp_row) in enumerate(found_cables):
-                # Проверяем проблемы для этого конкретного ответного кабеля
                 cable_problems = []
                 
-                # Получаем строку ответного кабеля из базы
-                resp_row_data = None
-                for r in sheet.iter_rows(min_row=2, values_only=True):
-                    if r and r[0] and str(r[0]).strip() == resp_journal:
-                        if r[kks_col - 1] and str(r[kks_col - 1]).strip() == cable_kks:
-                            resp_row_data = r
-                            break
+                # Получаем строку ответного кабеля ИЗ ИНДЕКСА (без сканирования)
+                resp_key = (cable_kks, resp_journal)
+                resp_row_data = row_index.get(resp_key)
                 
                 if resp_row_data:
                     # Проверка марки + сечения
                     mark_col = get_column_index(sheet, 'Марка')
                     section_col = get_column_index(sheet, 'Сечение')
-                    # Собираем марку + сечение для исходного кабеля
                     original_mark = str(row[mark_col - 1]).strip() if mark_col and mark_col <= len(row) and row[mark_col - 1] else ''
                     original_section = str(row[section_col - 1]).strip() if section_col and section_col <= len(row) and row[section_col - 1] else ''
                     original_full = f"{original_mark} {original_section}".strip() if original_mark or original_section else ''
@@ -684,9 +668,8 @@ def process_journal(excel_path, journal_kks, output_path):
                     
                     if original_full and response_full and original_full != response_full:
                         cable_problems.append(f"Марка не совпадает: {original_full} ≠ {response_full}")
-
-
-                    # Проверка помещений "Откуда" и "Куда" (вместе, порядок не важен)
+                    
+                    # Проверка помещений
                     from_room_col = get_column_index(sheet, 'Откуда помещение')
                     to_room_col = get_column_index(sheet, 'Куда помещение')
                     
@@ -697,13 +680,11 @@ def process_journal(excel_path, journal_kks, output_path):
                         response_to = str(resp_row_data[to_room_col - 1]).strip() if resp_row_data[to_room_col - 1] else ''
                         
                         if not compare_room_equip_pairs(original_from, original_to, response_from, response_to):
-                            # Формируем читаемое сообщение о несовпадении
                             original_str = f"{original_from} ↔ {original_to}" if original_from or original_to else '(пусто)'
                             response_str = f"{response_from} ↔ {response_to}" if response_from or response_to else '(пусто)'
                             cable_problems.append(f"Помещения не совпадают: {original_str} ≠ {response_str}")
                     
-
-                    # Проверка оборудования "Откуда" и "Куда" (вместе, порядок не важен)
+                    # Проверка оборудования
                     from_equip_col = get_column_index(sheet, 'Откуда оборудование')
                     to_equip_col = get_column_index(sheet, 'Куда оборудование')
                     
@@ -723,17 +704,15 @@ def process_journal(excel_path, journal_kks, output_path):
                     if trace_col and trace_col <= len(resp_row_data):
                         original_trace = str(row[trace_col - 1]).strip() if row[trace_col - 1] else ''
                         response_trace = str(resp_row_data[trace_col - 1]).strip() if resp_row_data[trace_col - 1] else ''
-
                         if original_trace and response_trace:
                             original_elements = extract_trace_elements(original_trace)
                             response_elements = extract_trace_elements(response_trace)
-                            # Сравниваем множества
                             if original_elements and response_elements:
                                 if original_elements.issubset(response_elements) or original_elements == response_elements:
                                     cable_problems.append("Трасса исходного кабеля содержится в трассе ответного")
                                 elif response_elements.issubset(original_elements):
                                     cable_problems.append("Трасса ответного кабеля содержится в трассе исходного")
-                
+                    
                     # Проверка группы
                     group_col = get_column_index(sheet, 'Группа')
                     if group_col and group_col <= len(resp_row_data):
@@ -741,11 +720,10 @@ def process_journal(excel_path, journal_kks, output_path):
                         response_group = str(resp_row_data[group_col - 1]).strip() if resp_row_data[group_col - 1] else ''
                         if original_group and response_group and original_group != response_group:
                             cable_problems.append(f"Группа не совпадает: {original_group} ≠ {response_group}")
-
+                
                 if not cable_problems:
                     cable_problems.append("Проблем не обнаружено")
                 
-                # Формируем запись
                 if idx == 0:
                     result_counter += 1
                     results.append({
@@ -757,23 +735,16 @@ def process_journal(excel_path, journal_kks, output_path):
                         'problems': '; '.join(cable_problems)
                     })
                 else:
-                    # Для остальных — НЕ увеличиваем счётчик, num пустой
+                    # Для остальных — num пустой, но kks и source заполняем!
                     results.append({
-                        'num': '',  # ← пусто
-                        'kks': '',  # ← пусто
-                        'source': '',  # ← пусто
+                        'num': '',
+                        'kks': cable_kks,
+                        'source': src_info,
                         'response': f"{resp_journal} ({resp_source}, {resp_date})",
-                        'note': '',  # ← пусто
+                        'note': '',
                         'problems': '; '.join(cable_problems)
                     })
-            
-            # Если проблем не было ни у одного ответного кабеля, но мы добавили "Проблем не обнаружено"
-            # Убираем это сообщение, если проблем действительно нет
-            # (оставляем, чтобы пользователь видел, что проверка прошла)
-            pass
-            
         else:
-            # Ответная часть не найдена
             result_counter += 1
             results.append({
                 'num': result_counter,
@@ -785,6 +756,7 @@ def process_journal(excel_path, journal_kks, output_path):
             })
             problem_count += 1
     
+
     # Записываем результаты в Excel
     row_idx = 2
     for result in results:

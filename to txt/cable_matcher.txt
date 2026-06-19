@@ -23,7 +23,7 @@ from pathlib import Path
 from openpyxl import load_workbook, Workbook
 from openpyxl.utils import get_column_letter
 from openpyxl.styles import Font
-
+from openpyxl.styles import PatternFill
 
 # ========== КОНФИГУРАЦИЯ ==========
 HEADERS = [
@@ -173,23 +173,194 @@ def extract_trace_elements(trace_str):
     return elements
 
 
-def combine_traces(traces):
+def combine_traces(from_room, to_room, traces_list):
     """
-    Объединяет трассы из нескольких кабелей.
+    Объединяет трассы из нескольких кабелей в одну с учётом направления.
     
+
+    def combine_traces должна получать на вход строку помещение откуда первого из объединяемых кабелей; строку помещение куда первого из объединяемых кабелей; список трасс группы объединяемых кабелей.
+    1. Получить из строк ККС помещений подстроки  ККС здания - это regular_KKS_building. В итоге у нас есть ККС здания откуда и ККС здания куда. это начало и конец общей объединенной трассы
+    2. каждую из объединяемых трасс разбить на слова и привести к списку трасс согласно regular_cable_tray: trace_list_1, trace_list_2 и т.д. по числу кабелей в групппе. порядок внутри списков важен. 
+    3. списки выстроить в последовательность по следующей логике:
+    есть ККС_здания_откуда , ККС_здания_куда
+    есть trace_list_1, trace_list_2, ..., trace_list_n
+
+    Если ККС_здания_откуда содержится как подстрока хотя бы в одном элементе trace_list и не содержится в остальных trace_list, то этот trace_list первый
+    Если ККС_здания_откуда содержится как подстрока во всех элементах trace_list , то этот trace_list первый
+
+    Если trace_list всего два и определено, который первый, оставшийся автоматически последний, последовательность выстроена.
+
+    Если ККС_здания_куда содержится как подстрока хотя бы в одном элементе trace_list и не содержится в остальных trace_list, то этот trace_list последний
+    Если ККС_здания_куда содержится как подстрока во всех элементах  trace_list, то этот trace_list последний
+
+    Если trace_list всего два и определено, который последний, оставшийся автоматически первый, последовательность выстроена.
+
+    Если trace_list больше двух и определено, который первый и который последний, оставшиеся расположить между ними, последовательность выстроена.
+
+    Если ККС_здания_откуда или ККС_здания_куда отсутствуют или не находятся в элементах trace_list, последовательность выстроить по порядку.
+
+    4. В первом trace_list если первый элемент не содержит как подстроку ККС_здания_откуда, то в этом trace_list изменить последовательность элементов на обратную
+    5.  В последнем trace_list если последний элемент не содержит как подстроку ККС_здания_откуда, то в этом trace_list изменить последовательность элементов на обратную
+    6. создать итоговую трассу - строку, соединяя элементы из trace_list в выстроенной последовательности через запятую. Между элементами разных trace_list  добавлять знак '+'
+    7. полученную строку выдать
+
     Args:
-        traces: список строк с трассами
+        from_room: ККС помещения "Откуда" (первого кабеля в группе)
+        to_room: ККС помещения "Куда" (первого кабеля в группе)
+        traces_list: список строк с трассами (по одной на каждый кабель в группе)
     
     Returns:
         str: объединённая трасса
-    
-    TODO: Реализовать более сложную логику объединения трасс
-    - Удаление дубликатов
-    - Сортировка по порядку
-    - Объединение пересекающихся участков
     """
-    # Пока просто склеиваем через "; "
-    return '; '.join([t for t in traces if t])
+    import re
+    from config import regular_cable_tray, regular_KKS_building
+    
+    # 1. Получаем ККС здания откуда и куда
+    from_building = ''
+    to_building = ''
+    
+    if from_room:
+        match = regular_KKS_building.search(str(from_room))
+        if match:
+            from_building = match.group()
+    
+    if to_room:
+        match = regular_KKS_building.search(str(to_room))
+        if match:
+            to_building = match.group()
+    
+    # 2. Разбиваем каждую трассу на список элементов по regular_cable_tray
+    trace_lists = []
+    for trace in traces_list:
+        if not trace:
+            trace_lists.append([])
+            continue
+        elements = []
+        # Убираем запятую в конце
+        trace_clean = str(trace).rstrip(',').strip()
+        # Разбиваем на слова (по пробелам и запятым)
+        words = re.split(r'[\s,;]+', trace_clean)
+        for word in words:
+            word = word.strip()
+            if word and regular_cable_tray.search(word):
+                elements.append(word)
+        trace_lists.append(elements)
+    
+    # Удаляем пустые списки
+    trace_lists = [lst for lst in trace_lists if lst]
+    
+    if not trace_lists:
+        return ''
+    
+    if len(trace_lists) == 1:
+        # Если только одна трасса — возвращаем как есть
+        return ', '.join(trace_lists[0])
+    
+    # 3. Определяем порядок списков
+    # Функция для проверки, содержит ли список заданное здание
+    def list_contains_building(lst, building):
+        if not building:
+            return False
+        for item in lst:
+            if building in item:
+                return True
+        return False
+    
+    # Функция для подсчёта, сколько списков содержат здание
+    def count_lists_with_building(lists, building):
+        if not building:
+            return 0
+        count = 0
+        for lst in lists:
+            if list_contains_building(lst, building):
+                count += 1
+        return count
+    
+    first_idx = None
+    last_idx = None
+    
+    # Определяем первый список (по from_building)
+    if from_building:
+        from_count = count_lists_with_building(trace_lists, from_building)
+        if from_count == 1:
+            # Если здание только в одном списке — он первый
+            for i, lst in enumerate(trace_lists):
+                if list_contains_building(lst, from_building):
+                    first_idx = i
+                    break
+        elif from_count == len(trace_lists):
+            # Если здание во всех списках — берём первый список как первый
+            first_idx = 0
+    
+    # Определяем последний список (по to_building)
+    if to_building:
+        to_count = count_lists_with_building(trace_lists, to_building)
+        if to_count == 1:
+            # Если здание только в одном списке — он последний
+            for i, lst in enumerate(trace_lists):
+                if list_contains_building(lst, to_building):
+                    last_idx = i
+                    break
+        elif to_count == len(trace_lists):
+            # Если здание во всех списках — берём последний список как последний
+            last_idx = len(trace_lists) - 1
+    
+    # Упорядочиваем списки
+    ordered_lists = []
+    remaining_indices = list(range(len(trace_lists)))
+    
+    # Если определён первый индекс
+    if first_idx is not None:
+        ordered_lists.append(trace_lists[first_idx])
+        remaining_indices.remove(first_idx)
+    
+    # Если определён последний индекс (и он не совпадает с первым)
+    if last_idx is not None and last_idx != first_idx:
+        # Если последний ещё не добавлен
+        if last_idx in remaining_indices:
+            # Добавляем все остальные, а последний — в конце
+            for i in remaining_indices:
+                if i != last_idx:
+                    ordered_lists.append(trace_lists[i])
+            ordered_lists.append(trace_lists[last_idx])
+        else:
+            # Если последний уже добавлен как первый (не должно случиться, но на всякий случай)
+            for i in remaining_indices:
+                ordered_lists.append(trace_lists[i])
+    else:
+        # Если последний не определён или совпадает с первым
+        for i in remaining_indices:
+            ordered_lists.append(trace_lists[i])
+    
+    # Если порядок не был определён (нет from_building и to_building) — оставляем как есть
+    if first_idx is None and last_idx is None:
+        ordered_lists = trace_lists.copy()
+    
+    # 4. В первом списке: если первый элемент не содержит from_building — разворачиваем
+    if ordered_lists and from_building:
+        first_list = ordered_lists[0]
+        if first_list:
+            # Проверяем первый элемент списка
+            if not (from_building in first_list[0]):
+                ordered_lists[0] = first_list[::-1]
+    
+    # 5. В последнем списке: если последний элемент не содержит to_building — разворачиваем
+    if ordered_lists and to_building and len(ordered_lists) > 1:
+        last_list = ordered_lists[-1]
+        if last_list:
+            # Проверяем последний элемент списка
+            if not (to_building in last_list[-1]):
+                ordered_lists[-1] = last_list[::-1]
+    
+    # 6. Собираем итоговую трассу
+    result_parts = []
+    for i, lst in enumerate(ordered_lists):
+        if i > 0:
+            # Между разными списками добавляем ' + '
+            result_parts.append(' + ')
+        result_parts.append(', '.join(lst))
+    
+    return ''.join(result_parts)
 
 
 def create_worksheet(wb_out, results, sheet, journal_kks):
@@ -203,7 +374,7 @@ def create_worksheet(wb_out, results, sheet, journal_kks):
         journal_kks: ККС журнала, который был взят при запуске
     """
     # Создаём лист
-    ws = wb_out.create_sheet("Рабочий стол")
+    ws = wb_out.create_sheet("В работу")
     
     # Заголовки
     headers = [
@@ -239,22 +410,23 @@ def create_worksheet(wb_out, results, sheet, journal_kks):
     
     row_idx = 2  # начинаем со второй строки (после заголовков)
     
-    # Группируем результаты по ККС
-    # results уже содержит записи, но нам нужно сгруппировать по ККС
+    # Группируем результаты по ККС (только те, у которых есть ответная часть)
     groups = {}
     for result in results:
         kks = result['kks']
         if not kks:
             continue
+        # Пропускаем кабели без ответной части
+        if not result['response'] or result['response'] == '-':
+            continue
         if kks not in groups:
             groups[kks] = {
                 'num': result['num'],
-                'source': result['source'],  # исходный журнал
+                'source': result['source'],
                 'cables': []
             }
-        # Добавляем информацию о кабеле
         groups[kks]['cables'].append({
-            'journal': result['response'],  # ответный журнал (или исходный для первого?)
+            'journal': result['response'],
             'response': result['response'],
             'note': result['note'],
             'problems': result['problems']
@@ -295,7 +467,6 @@ def create_worksheet(wb_out, results, sheet, journal_kks):
                         'is_source': False,
                         'row': row
                     })
-                    break
         
         # 2. Записываем все кабели группы
         for idx, cable in enumerate(cables_data):
@@ -304,10 +475,18 @@ def create_worksheet(wb_out, results, sheet, journal_kks):
             # № п/п — только для первого кабеля в группе
             if idx == 0:
                 ws.cell(row=row_idx, column=1, value=group_data['num'])
-                ws.cell(row=row_idx, column=2, value=kks)
+                
+                # Закрашиваем жёлтым ячейки помещения у первого кабеля
+                yellow_fill = PatternFill(start_color="FFFF00", end_color="FFFF00", fill_type="solid")
+                # Откуда помещение — колонка 7
+                ws.cell(row=row_idx, column=7).fill = yellow_fill
+                # Куда помещение — колонка 9
+                ws.cell(row=row_idx, column=9).fill = yellow_fill
             else:
                 ws.cell(row=row_idx, column=1, value='')
-                ws.cell(row=row_idx, column=2, value='')
+            
+            # ККС — для всех кабелей группы
+            ws.cell(row=row_idx, column=2, value=kks)
             
             # Журнал
             ws.cell(row=row_idx, column=3, value=cable['journal'])
@@ -336,8 +515,8 @@ def create_worksheet(wb_out, results, sheet, journal_kks):
         if cables_data:
             # Берём первый кабель как основу
             first_row = cables_data[0]['row']
-            
-            # ККС
+
+            ws.cell(row=row_idx, column=2, value=kks)
             ws.cell(row=row_idx, column=3, value="Объединенный")
             
             # Копируем данные из первого кабеля (кроме длины и трассы)
@@ -370,13 +549,23 @@ def create_worksheet(wb_out, results, sheet, journal_kks):
             
             # Объединяем трассы
             traces = []
-            for cable in cables_data:
+            from_room = ''
+            to_room = ''
+            
+            for idx, cable in enumerate(cables_data):
                 row = cable['row']
                 if 'Трасса' in col_map:
                     trace_val = row[col_map['Трасса'] - 1] if col_map['Трасса'] <= len(row) else ''
                     if trace_val:
                         traces.append(str(trace_val).strip())
-            merged_trace = '; '.join(traces) if traces else ''
+                # Берём помещения из первого кабеля
+                if idx == 0:
+                    if 'Откуда помещение' in col_map:
+                        from_room = row[col_map['Откуда помещение'] - 1] if col_map['Откуда помещение'] <= len(row) else ''
+                    if 'Куда помещение' in col_map:
+                        to_room = row[col_map['Куда помещение'] - 1] if col_map['Куда помещение'] <= len(row) else ''
+            
+            merged_trace = combine_traces(from_room, to_room, traces) if traces else ''
             ws.cell(row=row_idx, column=12, value=merged_trace)
             
             row_idx += 1
@@ -415,7 +604,7 @@ def process_journal(excel_path, journal_kks, output_path):
     # Создаём выходной файл
     wb_out = Workbook()
     sheet_out = wb_out.active
-    sheet_out.title = "Ответные части"
+    sheet_out.title = "Отчёт"
     
     for head in HEADERS:
         col = head[0] + 1
@@ -567,13 +756,13 @@ def process_journal(excel_path, journal_kks, output_path):
                         'problems': '; '.join(cable_problems)
                     })
                 else:
-                    # Для остальных — НЕ увеличиваем счётчик, num пустой
+                    # Для остальных — num пустой, но kks и source заполняем!
                     results.append({
-                        'num': '',  # ← пусто
-                        'kks': '',  # ← пусто
-                        'source': '',  # ← пусто
+                        'num': '',  # ← пусто (нумерация только для новых кабелей)
+                        'kks': cable_kks,  # ← заполняем для группировки
+                        'source': src_info,  # ← заполняем для группировки
                         'response': f"{resp_journal} ({resp_source}, {resp_date})",
-                        'note': '',  # ← пусто
+                        'note': '',
                         'problems': '; '.join(cable_problems)
                     })
             

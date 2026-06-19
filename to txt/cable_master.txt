@@ -13,6 +13,8 @@ import subprocess
 import os
 from excel_utils import build_cable_database
 from cable_matcher import process_journal
+from pathlib import Path
+import sys
 
 
 class CableParserGUI:
@@ -24,16 +26,23 @@ class CableParserGUI:
         self.root.resizable(False, False)
         self.root.configure(bg="#f0f0f0")
         
+        # Получаем путь к директории, где находится исполняемый файл
+        if getattr(sys, 'frozen', False):
+            # Если программа запущена как .exe (упакована PyInstaller)
+            program_dir = os.path.dirname(sys.executable)
+        else:
+            # Если запущена как .py скрипт
+            program_dir = os.path.dirname(os.path.abspath(__file__))
+        
         # Переменные для вкладки 1 (Парсер)
-        self.journals_dir = tk.StringVar()
-        self.output_dir = tk.StringVar()
-        self.open_folder = tk.BooleanVar(value=True)  # ← ПЕРЕМЕННАЯ
+        self.journals_dir = tk.StringVar(value=program_dir)
+        self.output_dir = tk.StringVar(value=program_dir)
+
         
         # Переменные для вкладки 2 (Поиск ответных частей)
-        self.matcher_db_path = tk.StringVar()
+        self.matcher_db_path = tk.StringVar(value=program_dir)
         self.matcher_journal_kks = tk.StringVar()
-        self.matcher_output_path = tk.StringVar()
-        self.matcher_open_folder = tk.BooleanVar(value=True)
+
         
         self.is_running = False
         self.last_saved_file = None
@@ -120,6 +129,12 @@ class CableParserGUI:
         tk.Label(info_frame, text="Поддерживаются форматы: .docx, .doc\nБаза сохраняется в .xlsx",
                 font=("Arial", 8), fg="#7f8c8d", bg="#ecf0f1").pack(expand=True)
     
+
+
+    
+
+
+
     # ========== ВКЛАДКА 1: ПАРСЕР БАЗ ==========
     def setup_parser_tab(self):
         """Настройка вкладки 'Парсер баз данных'"""
@@ -146,21 +161,22 @@ class CableParserGUI:
         tk.Button(output_frame, text="Выбрать папку", command=self.select_output_dir,
                  bg="#3498db", fg="white", font=("Arial", 9), padx=10, cursor="hand2").pack(side="right")
         
-        # Чекбокс
-        checkbox_frame = tk.Frame(main_frame, bg="#f0f0f0")
-        checkbox_frame.pack(fill="x", pady=(0, 10))
+        # Кнопка "Открыть папку с результатом"
+        button_frame = tk.Frame(main_frame, bg="#f0f0f0")
+        button_frame.pack(fill="x", pady=(0, 10))
         
-        self.open_folder_checkbox = tk.Checkbutton(
-            checkbox_frame, 
-            text="📂 Открыть папку с результатом после обработки",
-            variable=self.open_folder,  # ← используем переменную
+        self.open_folder_btn = tk.Button(
+            button_frame,
+            text="Открыть папку с результатом",
+            command=self.open_result_folder,
+            bg="#3498db",
+            fg="white",
             font=("Arial", 9),
-            bg="#f0f0f0",
-            fg="#2c3e50",
-            anchor="w",
-            cursor="hand2"
+            padx=10,
+            cursor="hand2",
+            state="disabled"  # изначально неактивна
         )
-        self.open_folder_checkbox.pack(side="left")
+        self.open_folder_btn.pack(side="left")
         
         # Прогресс
         progress_frame = tk.LabelFrame(main_frame, text="📊 Прогресс обработки", 
@@ -196,6 +212,14 @@ class CableParserGUI:
                                      font=("Arial", 9), fg="#7f8c8d", bg="#f0f0f0", wraplength=550, justify="center")
         self.status_label.pack()
     
+    def open_result_folder(self):
+        """Открывает папку с результатом (для вкладки Парсер)"""
+        folder = self.output_dir.get().strip()
+        if not folder:
+            self.update_status("Не выбрана папка для сохранения!", is_error=True)
+            return
+        self.open_folder_path(folder)
+    
     # ========== ВКЛАДКА 2: ПОИСК ОТВЕТНЫХ ЧАСТЕЙ ==========
     def setup_matcher_tab(self):
         """Настройка вкладки 'Поиск ответных частей'"""
@@ -229,32 +253,23 @@ class CableParserGUI:
         self.journal_entry = tk.Entry(journal_frame, textvariable=self.matcher_journal_kks,
                                       font=("Arial", 10), bg="white")
         self.journal_entry.pack(fill="x", pady=(0, 5))
+               
+        # Кнопка "Открыть папку с результатом"
+        button_frame = tk.Frame(main_frame, bg="#f0f0f0")
+        button_frame.pack(fill="x", pady=(0, 10))
         
-        # Куда сохранить результат
-        output_frame = tk.LabelFrame(main_frame, text="Сохранение результата", 
-                                     padx=10, pady=10, font=("Arial", 10, "bold"), bg="#f0f0f0")
-        output_frame.pack(fill="x", pady=(0, 15))
-        
-        tk.Entry(output_frame, textvariable=self.matcher_output_path, 
-                font=("Arial", 10), state="readonly", bg="white").pack(side="left", fill="x", expand=True, padx=(0, 10))
-        tk.Button(output_frame, text="Выбрать файл", command=self.select_matcher_output,
-                 bg="#3498db", fg="white", font=("Arial", 9), padx=10, cursor="hand2").pack(side="right")
-        
-        # Чекбокс
-        checkbox_frame = tk.Frame(main_frame, bg="#f0f0f0")
-        checkbox_frame.pack(fill="x", pady=(0, 10))
-        
-        self.matcher_open_folder_checkbox = tk.Checkbutton(
-            checkbox_frame, 
-            text="📂 Открыть папку с результатом после обработки",
-            variable=self.matcher_open_folder,
+        self.matcher_open_folder_btn = tk.Button(
+            button_frame,
+            text="Открыть папку с результатом",
+            command=self.open_matcher_result_folder,
+            bg="#3498db",
+            fg="white",
             font=("Arial", 9),
-            bg="#f0f0f0",
-            fg="#2c3e50",
-            anchor="w",
-            cursor="hand2"
+            padx=10,
+            cursor="hand2",
+            state="disabled"  # изначально неактивна
         )
-        self.matcher_open_folder_checkbox.pack(side="left")
+        self.matcher_open_folder_btn.pack(side="left")
         
         # Кнопка запуска
         self.matcher_run_btn = tk.Button(main_frame, text="🔍 НАЙТИ ОТВЕТНЫЕ ЧАСТИ",
@@ -267,6 +282,15 @@ class CableParserGUI:
                                              font=("Arial", 9), fg="#7f8c8d", bg="#f0f0f0", wraplength=550, justify="center")
         self.matcher_status_label.pack()
     
+    def open_matcher_result_folder(self):
+        """Открывает папку с результатом (для вкладки Поиск ответных частей)"""
+        db_path = Path(self.matcher_db_path.get())
+        reports_dir = db_path.parent / "Отчёты"
+        if reports_dir.exists():
+            self.open_folder_path(str(reports_dir))
+        else:
+            self.update_status("Папка 'Отчёты' ещё не создана", is_error=True)
+   
     # ========== ОБЩИЕ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
     
     def update_status(self, message, is_error=False):
@@ -363,24 +387,24 @@ class CableParserGUI:
         duration = time.time() - start_time
         self.is_running = False
         self.run_btn.config(state="normal", bg="#27ae60")
+        self.open_folder_btn.config(state="normal")  # ← активируем кнопку
         self.update_status(f"✅ Обработка завершена! Время: {duration:.2f} сек")
         self.progress_detail.config(text="Готово! База данных создана.", fg="#27ae60")
         
-        if self.open_folder.get():  # ← проверяем переменную
-            self.root.after(500, lambda: self.open_folder_path(self.output_dir.get()))  # ← вызываем метод
-        
         messagebox.showinfo("Готово!", 
-            f"✅ Обработка завершена!\n\n"
-            f"📁 Журналы: {self.journals_dir.get()}\n"
-            f"💾 База сохранена в: {self.output_dir.get()}\n"
-            f"⏱️ Время: {duration:.2f} сек")
+            f"Обработка завершена!\n\n"
+            f"Журналы: {self.journals_dir.get()}\n"
+            f"База сохранена в: {self.output_dir.get()}\n"
+            f"Время: {duration:.2f} сек")
     
     def _on_parser_error(self, error_msg):
         self.is_running = False
         self.run_btn.config(state="normal", bg="#27ae60")
+        self.open_folder_btn.config(state="disabled")  # ← деактивируем
         self.update_status(f"Ошибка: {error_msg}", is_error=True)
         self.progress_detail.config(text=f"Ошибка: {error_msg[:80]}", fg="#e74c3c")
         messagebox.showerror("Ошибка", f"При обработке произошла ошибка:\n\n{error_msg}")
+
     
     # ========== ФУНКЦИИ ДЛЯ ВКЛАДКИ 2 (ПОИСК ОТВЕТНЫХ ЧАСТЕЙ) ==========
     
@@ -403,6 +427,7 @@ class CableParserGUI:
             self.matcher_output_path.set(file_path)
             self.update_status(f"Результат будет сохранён в: {file_path}")
     
+
     def run_matcher(self):
         if self.is_running:
             messagebox.showwarning("Внимание", "Обработка уже выполняется!")
@@ -416,10 +441,6 @@ class CableParserGUI:
             messagebox.showerror("Ошибка", "Введите ККС журнала!")
             return
         
-        if not self.matcher_output_path.get():
-            messagebox.showerror("Ошибка", "Выберите файл для сохранения результата!")
-            return
-        
         self.is_running = True
         self.matcher_run_btn.config(state="disabled", bg="#95a5a6")
         self.update_status("⏳ Поиск ответных частей...")
@@ -427,41 +448,55 @@ class CableParserGUI:
         thread = threading.Thread(target=self._process_matcher, daemon=True)
         thread.start()
     
+
     def _process_matcher(self):
         start_time = time.time()
         try:
+            # Формируем имя выходного файла
+            db_path = Path(self.matcher_db_path.get())
+            journal_kks = self.matcher_journal_kks.get().strip()
+            safe_journal = journal_kks.replace('\\', '_').replace('/', '_').replace(':', '_')
+            output_filename = f"Отчет по журналу {safe_journal}.xlsx"
+            
+            # Создаём папку "Отчёты" рядом с базой
+            reports_dir = db_path.parent / "Отчёты"
+            reports_dir.mkdir(exist_ok=True)
+            
+            output_path = reports_dir / output_filename
+            
             process_journal(
                 self.matcher_db_path.get(),
-                self.matcher_journal_kks.get().strip(),
-                self.matcher_output_path.get()
+                journal_kks,
+                str(output_path)
             )
-            self.root.after(0, self._on_matcher_success, start_time)
+            self.root.after(0, self._on_matcher_success, start_time, str(output_path))
         except Exception as e:
             self.root.after(0, self._on_matcher_error, str(e))
-    
-    def _on_matcher_success(self, start_time):
+
+
+    def _on_matcher_success(self, start_time, output_path):
         duration = time.time() - start_time
         self.is_running = False
         self.matcher_run_btn.config(state="normal", bg="#8e44ad")
+        self.matcher_open_folder_btn.config(state="normal")  # ← активируем кнопку
         self.update_status(f"✅ Обработка завершена! Время: {duration:.2f} сек")
         
-        if self.matcher_open_folder.get():
-            output_dir = os.path.dirname(self.matcher_output_path.get())
-            self.root.after(500, lambda: self.open_folder_path(output_dir))  # ← вызываем метод
-        
         messagebox.showinfo("Готово!", 
-            f"✅ Поиск завершён!\n\n"
-            f"📁 База: {self.matcher_db_path.get()}\n"
-            f"📌 Журнал: {self.matcher_journal_kks.get()}\n"
-            f"💾 Результат: {self.matcher_output_path.get()}\n"
-            f"⏱️ Время: {duration:.2f} сек")
+            f"Поиск завершён!\n\n"
+            f"База: {self.matcher_db_path.get()}\n"
+            f"Журнал: {self.matcher_journal_kks.get()}\n"
+            f"Результат: {output_path}\n"
+            f"Время: {duration:.2f} сек")
     
+
     def _on_matcher_error(self, error_msg):
         self.is_running = False
         self.matcher_run_btn.config(state="normal", bg="#8e44ad")
+        self.matcher_open_folder_btn.config(state="disabled")  # ← деактивируем
         self.update_status(f"Ошибка: {error_msg}", is_error=True)
         messagebox.showerror("Ошибка", f"При обработке произошла ошибка:\n\n{error_msg}")
     
+
     def run(self):
         self.root.mainloop()
 
