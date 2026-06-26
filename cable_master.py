@@ -243,16 +243,19 @@ class CableParserGUI:
                  bg="#3498db", fg="white", font=("Arial", 9), padx=10, cursor="hand2").pack(side="right")
         
         # ККС журнала
-        journal_frame = tk.LabelFrame(main_frame, text="ККС журнала для поиска", 
+        journal_frame = tk.LabelFrame(main_frame, text="ККС журналов для поиска", 
                                       padx=10, pady=10, font=("Arial", 10, "bold"), bg="#f0f0f0")
         journal_frame.pack(fill="x", pady=(0, 15))
         
-        tk.Label(journal_frame, text="ККС журнала:",
+        tk.Label(journal_frame, text="Введите ККС журналов (по одному на строку):",
                 font=("Arial", 9), bg="#f0f0f0", fg="#2c3e50").pack(anchor="w", pady=(0, 5))
         
-        self.journal_entry = tk.Entry(journal_frame, textvariable=self.matcher_journal_kks,
-                                      font=("Arial", 10), bg="white")
+        self.journal_entry = tk.Text(journal_frame, font=("Arial", 10), bg="white", height=5)
         self.journal_entry.pack(fill="x", pady=(0, 5))
+        
+        # Подсказка
+        tk.Label(journal_frame, text="Пример: AKU.0120.00UKS.0.EM.MB0002-EMB0001",
+                font=("Arial", 8), bg="#f0f0f0", fg="#7f8c8d").pack(anchor="w")
                
         # Кнопка "Открыть папку с результатом"
         button_frame = tk.Frame(main_frame, bg="#f0f0f0")
@@ -374,11 +377,14 @@ class CableParserGUI:
     def _process_parser(self):
         start_time = time.time()
         try:
+            import pythoncom
+            pythoncom.CoInitialize()  # ← инициализация в потоке
             build_cable_database(
                 self.journals_dir.get(), 
                 self.output_dir.get(),
                 progress_callback=self.update_progress
             )
+            pythoncom.CoUninitialize()  # ← освобождение
             self.root.after(0, self._on_parser_success, start_time)
         except Exception as e:
             self.root.after(0, self._on_parser_error, str(e))
@@ -437,39 +443,41 @@ class CableParserGUI:
             messagebox.showerror("Ошибка", "Выберите файл базы данных!")
             return
         
-        if not self.matcher_journal_kks.get():
-            messagebox.showerror("Ошибка", "Введите ККС журнала!")
+        # Получаем список журналов из текстового поля
+        journal_text = self.journal_entry.get("1.0", tk.END).strip()
+        if not journal_text:
+            messagebox.showerror("Ошибка", "Введите ККС журналов!")
+            return
+        
+        # Разбиваем на строки и фильтруем пустые
+        journal_list = [j.strip() for j in journal_text.split('\n') if j.strip()]
+        if not journal_list:
+            messagebox.showerror("Ошибка", "Не введено ни одного журнала!")
             return
         
         self.is_running = True
         self.matcher_run_btn.config(state="disabled", bg="#95a5a6")
-        self.update_status("⏳ Поиск ответных частей...")
+        self.update_status(f"⏳ Поиск ответных частей для {len(journal_list)} журналов...")
         
-        thread = threading.Thread(target=self._process_matcher, daemon=True)
+        thread = threading.Thread(target=self._process_matcher, args=(journal_list,), daemon=True)
         thread.start()
     
 
-    def _process_matcher(self):
+    def _process_matcher(self, journal_list):
         start_time = time.time()
         try:
-            # Формируем имя выходного файла
             db_path = Path(self.matcher_db_path.get())
-            journal_kks = self.matcher_journal_kks.get().strip()
-            safe_journal = journal_kks.replace('\\', '_').replace('/', '_').replace(':', '_')
-            output_filename = f"Отчет по журналу {safe_journal}.xlsx"
-            
-            # Создаём папку "Отчёты" рядом с базой
             reports_dir = db_path.parent / "Отчёты"
             reports_dir.mkdir(exist_ok=True)
             
-            output_path = reports_dir / output_filename
-            
-            process_journal(
+            # Передаём список журналов в новую функцию
+            from cable_matcher import process_multiple_journals
+            process_multiple_journals(
                 self.matcher_db_path.get(),
-                journal_kks,
-                str(output_path)
+                journal_list,
+                str(reports_dir)
             )
-            self.root.after(0, self._on_matcher_success, start_time, str(output_path))
+            self.root.after(0, self._on_matcher_success, start_time, str(reports_dir))
         except Exception as e:
             self.root.after(0, self._on_matcher_error, str(e))
 

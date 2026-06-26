@@ -9,6 +9,8 @@ import os
 import shutil
 import re
 import win32com.client
+import pythoncom
+
 from pathlib import Path
 from docx import Document
 import config
@@ -51,9 +53,8 @@ def get_mismatch_indices(list1, list2):
 # ----- блок функций для конвертации и работы с Word (существующие) -----
 
 def convert_doc_to_docx(doc_path):
-    '''
-    Конвертирует .doc в .docx
-    '''
+    '''Конвертирует .doc в .docx'''
+    pythoncom.CoInitialize()
     word = win32com.client.Dispatch("Word.Application")
     word.Visible = False
     doc = None
@@ -69,9 +70,14 @@ def convert_doc_to_docx(doc_path):
             doc.Close()
         word.Quit()
         raise
+    finally:
+        pythoncom.CoUninitialize()
 
 def convert_numbering_to_text(doc_path):
     """Конвертирует автоматическую нумерацию в текст в документе Word"""
+    # Инициализируем COM для текущего потока
+    pythoncom.CoInitialize()
+    
     abs_path = os.path.abspath(doc_path)
     word = None
     doc = None
@@ -91,6 +97,8 @@ def convert_numbering_to_text(doc_path):
             doc.Close()
         if word:
             word.Quit()
+        # Освобождаем COM
+        pythoncom.CoUninitialize()
 
 def move_file(source_path, destination_dir):
     """

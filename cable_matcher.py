@@ -556,6 +556,7 @@ def create_worksheet(wb_out, results, sheet, journal_kks):
     
     return ws
 
+
 def process_journal(excel_path, journal_kks, output_path):
     """
     Основная функция обработки журнала.
@@ -796,11 +797,115 @@ def process_journal(excel_path, journal_kks, output_path):
     return results
 
 
+def process_multiple_journals(excel_path, journal_kks_list, output_dir=None):
+    """
+    Обрабатывает несколько журналов за один раз.
+    
+    Args:
+        excel_path: путь к базе данных
+        journal_kks_list: список ККС журналов для обработки
+        output_dir: папка для сохранения отчётов (если None — рядом с базой)
+    """
+    if not journal_kks_list:
+        print("❌ Список журналов пуст.")
+        return
+    
+    print(f"\n{'='*60}")
+    print("ПОИСК ОТВЕТНЫХ ЧАСТЕЙ ДЛЯ НЕСКОЛЬКИХ ЖУРНАЛОВ")
+    print(f"{'='*60}")
+    print(f"Загрузка: {excel_path}")
+    print(f"Журналов для обработки: {len(journal_kks_list)}")
+    print("-" * 60)
+    
+    # Создаём папку для отчётов
+    db_path = Path(excel_path)
+    if output_dir is None:
+        reports_dir = db_path.parent / "Отчёты"
+    else:
+        reports_dir = Path(output_dir)
+    reports_dir.mkdir(exist_ok=True)
+    
+    total_cables = 0
+    total_results = 0
+    total_problems = 0
+    processed = []
+    failed = []
+    
+    for i, journal_kks in enumerate(journal_kks_list, 1):
+        journal_kks = journal_kks.strip()
+        if not journal_kks:
+            continue
+        
+        print(f"\n[{i}/{len(journal_kks_list)}] Обработка: {journal_kks}")
+        print("-" * 40)
+        
+        try:
+            # Формируем имя выходного файла
+            safe_journal = journal_kks.replace('\\', '_').replace('/', '_').replace(':', '_')
+            output_filename = f"Отчет по журналу {safe_journal}.xlsx"
+            output_path = reports_dir / output_filename
+            
+            # Обрабатываем журнал
+            results = process_journal(excel_path, journal_kks, str(output_path))
+            
+            # Собираем статистику
+            total_cables += len(results)
+            problem_count = sum(1 for r in results if r['problems'] and 'не найдена' not in r['problems'] and r['problems'] != 'Проблем не обнаружено')
+            total_problems += problem_count
+            total_results += len(results)
+            
+            processed.append({
+                'journal': journal_kks,
+                'cables': len(results),
+                'problems': problem_count,
+                'output': str(output_path)
+            })
+            
+            print(f"  ✅ Готово: {len(results)} кабелей, {problem_count} с проблемами")
+            
+        except Exception as e:
+            print(f"  ❌ Ошибка: {e}")
+            failed.append({'journal': journal_kks, 'error': str(e)})
+    
+    # Выводим сводку
+    print(f"\n{'='*60}")
+    print("СВОДКА ПО ОБРАБОТКЕ")
+    print(f"{'='*60}")
+    print(f"  Всего журналов: {len(journal_kks_list)}")
+    print(f"  Успешно обработано: {len(processed)}")
+    print(f"  С ошибками: {len(failed)}")
+    print(f"  Всего кабелей: {total_results}")
+    print(f"  Всего проблем: {total_problems}")
+    
+    if processed:
+        print("\n  Успешно обработанные журналы:")
+        for p in processed:
+            print(f"    {p['journal']} — {p['cables']} кабелей ({p['problems']} проблем)")
+    
+    if failed:
+        print("\n  Ошибки:")
+        for f in failed:
+            print(f"    {f['journal']} — {f['error']}")
+    
+    print(f"\n✅ Отчёты сохранены в: {reports_dir}")
+    print(f"{'='*60}")
+    
+    return processed, failed
+
+
+# ========== ТОЧКА ВХОДА ===============
 if __name__ == "__main__":
     print("\n" + "="*60)
     print("ПОИСК ОТВЕТНЫХ ЧАСТЕЙ КАБЕЛЕЙ")
     print("="*60)
+    print("\nВыберите режим работы:")
+    print("  1 — Один журнал")
+    print("  2 — Несколько журналов (список)")
+    print()
     
+    mode = input("Ваш выбор (1 или 2): ").strip()
+    
+    # Ввод пути к базе
     excel_path = input("Введите путь к файлу базы данных (Cable base ver.*.xlsx): ").strip()
     excel_path = excel_path.strip('"').strip("'")
     
@@ -812,26 +917,55 @@ if __name__ == "__main__":
         print(f"❌ Файл не найден: {excel_path}")
         sys.exit(1)
     
-    journal_kks = input("Введите ККС журнала для поиска ответных частей: ").strip()
-    journal_kks = journal_kks.strip('"').strip("'")
+    if mode == '2':
+        # Режим нескольких журналов
+        print("\nВведите ККС журналов для поиска (по одному на строку).")
+        print("Для завершения ввода оставьте пустую строку и нажмите Enter.")
+        print("-" * 40)
+        
+        journals = []
+        while True:
+            line = input().strip()
+            if not line:
+                break
+            journals.append(line)
+        
+        if not journals:
+            print("❌ Не введено ни одного журнала. Программа завершена.")
+            sys.exit(1)
+        
+        output_dir = input("\nВведите папку для сохранения отчётов (Enter для папки 'Отчёты' рядом с базой): ").strip()
+        output_dir = output_dir.strip('"').strip("'") if output_dir else None
+        
+        try:
+            process_multiple_journals(excel_path, journals, output_dir)
+            print("\n🏁 Готово!")
+        except Exception as e:
+            print(f"\n❌ Ошибка: {e}")
+            sys.exit(1)
     
-    if not journal_kks:
-        print("❌ ККС журнала не введён. Программа завершена.")
-        sys.exit(1)
-    
-    output_path = input("Введите путь для сохранения результата (имя_файла.xlsx): ").strip()
-    output_path = output_path.strip('"').strip("'")
-    
-    if not output_path:
-        print("❌ Путь для сохранения не указан. Программа завершена.")
-        sys.exit(1)
-    
-    if not output_path.endswith('.xlsx'):
-        output_path += '.xlsx'
-    
-    try:
-        process_journal(excel_path, journal_kks, output_path)
-        print("\n🏁 Готово!")
-    except Exception as e:
-        print(f"\n❌ Ошибка: {e}")
-        sys.exit(1)
+    else:
+        # Режим одного журнала
+        journal_kks = input("Введите ККС журнала для поиска ответных частей: ").strip()
+        journal_kks = journal_kks.strip('"').strip("'")
+        
+        if not journal_kks:
+            print("❌ ККС журнала не введён. Программа завершена.")
+            sys.exit(1)
+        
+        output_path = input("Введите путь для сохранения результата (имя_файла.xlsx): ").strip()
+        output_path = output_path.strip('"').strip("'")
+        
+        if not output_path:
+            print("❌ Путь для сохранения не указан. Программа завершена.")
+            sys.exit(1)
+        
+        if not output_path.endswith('.xlsx'):
+            output_path += '.xlsx'
+        
+        try:
+            process_journal(excel_path, journal_kks, output_path)
+            print("\n🏁 Готово!")
+        except Exception as e:
+            print(f"\n❌ Ошибка: {e}")
+            sys.exit(1)

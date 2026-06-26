@@ -162,41 +162,41 @@ def copy_merged_sheet_from_old_base(old_path, new_workbook):
         return new_sheet
 
 
-def add_merged_cables_from_json(json_path, merged_sheet):
-    """
-    Добавляет ККС из merged_list.json в лист 'Объединенные кабели'.
-    """
-    json_file = Path(json_path)
-    if not json_file.exists():
-        print(f"   ⚠️ Файл {json_path} не найден. Пропуск добавления объединённых кабелей.")
-        return 0
+# def add_merged_cables_from_json(json_path, merged_sheet):
+#     """
+#     Добавляет ККС из merged_list.json в лист 'Объединенные кабели'.
+#     """
+#     json_file = Path(json_path)
+#     if not json_file.exists():
+#         print(f"   ⚠️ Файл {json_path} не найден. Пропуск добавления объединённых кабелей.")
+#         return 0
     
-    # Загружаем список KKS из JSON
-    try:
-        with open(json_file, 'r', encoding='utf-8') as f:
-            merged_kks_list = json.load(f)
-    except Exception as e:
-        print(f"   ⚠️ Ошибка чтения {json_path}: {e}")
-        return 0
+#     # Загружаем список KKS из JSON
+#     try:
+#         with open(json_file, 'r', encoding='utf-8') as f:
+#             merged_kks_list = json.load(f)
+#     except Exception as e:
+#         print(f"   ⚠️ Ошибка чтения {json_path}: {e}")
+#         return 0
     
-    if not merged_kks_list:
-        print(f"   ℹ️ Файл {json_path} пуст. Нет кабелей для добавления.")
-        return 0
+#     if not merged_kks_list:
+#         print(f"   ℹ️ Файл {json_path} пуст. Нет кабелей для добавления.")
+#         return 0
     
-    # Находим первую свободную строку
-    row_idx = merged_sheet.max_row + 1
-    added_count = 0
+#     # Находим первую свободную строку
+#     row_idx = merged_sheet.max_row + 1
+#     added_count = 0
     
-    for kks in merged_kks_list:
-        if not kks:
-            continue
-        kks_str = str(kks).strip()
-        merged_sheet.cell(row=row_idx, column=1, value=kks_str)
-        row_idx += 1
-        added_count += 1
+#     for kks in merged_kks_list:
+#         if not kks:
+#             continue
+#         kks_str = str(kks).strip()
+#         merged_sheet.cell(row=row_idx, column=1, value=kks_str)
+#         row_idx += 1
+#         added_count += 1
     
-    print(f"   ✅ Добавлено {added_count} ККС из {json_path} в лист 'Объединенные кабели'.")
-    return added_count
+#     print(f"   ✅ Добавлено {added_count} ККС из {json_path} в лист 'Объединенные кабели'.")
+#     return added_count
 
 
 def load_old_notes(old_base_path, journals_names):
@@ -928,13 +928,13 @@ def build_cable_database(journals_dir, output_dir, progress_callback=None):
 
 
     # ========== ДОБАВЛЕНИЕ КАБЕЛЕЙ ИЗ MERGED_LIST.JSON ==========
-    old_base_path = Path(output_dir) / f"{b_name}{current_version - 1}.xlsx" if current_version > 1 else None
-    if not (old_base_path and old_base_path.exists()):
-        print("\n🔗 Добавление объединённых кабелей из merged_list.json...")
-        merged_sheet = wb['Объединенные кабели']
-        add_merged_cables_from_json('merged_list.json', merged_sheet)
-    else:
-        print("\n   ℹ️ Лист 'Объединенные кабели' скопирован из старой базы. Добавление из merged_list.json пропущено.")
+    # old_base_path = Path(output_dir) / f"{b_name}{current_version - 1}.xlsx" if current_version > 1 else None
+    # if not (old_base_path and old_base_path.exists()):
+    #     print("\n🔗 Добавление объединённых кабелей из merged_list.json...")
+    #     merged_sheet = wb['Объединенные кабели']
+    #     add_merged_cables_from_json('merged_list.json', merged_sheet)
+    # else:
+    #     print("\nЛист 'Объединенные кабели' скопирован из старой базы. Добавление из merged_list.json пропущено.")
     # ============================================================
 
 

@@ -65,6 +65,7 @@ def is_number(s):
     # Проверяем, что строка состоит из опционального знака, цифр и опциональной дробной части
     return re.match(r'^[+-]?\d+(?:[.,]\d+)?$', s) is not None
 
+
 def parse_coordinates_from_list(lst):
     """
     Извлекает из списка три координаты X,Y,Z.
@@ -221,6 +222,7 @@ def parse_coordinates_from_list(lst):
     # 7. НИЧЕГО НЕ НАШЛИ
     # =============================================================
     return ['', '', '']
+
 
 def parse_kks_block(block_cells, building_bounds):
     """
@@ -547,6 +549,72 @@ def parse_kks_block(block_cells, building_bounds):
     # или если он пустой, возвращаем пустые результаты.
     return [], [], ['', '', '']
 
+
+def merge_optical_cable_mark(text):
+    """
+    Склеивает разорванные марки оптических кабелей.
+    
+    Примеры:
+        'OKCнг(A)-FRHF-01-' + 'M8-4E1-1500' → 'OKCнг(A)-FRHF-01-M8-4E1-1500'
+        'OKЗнг(A)-FRHF' + 'M8-4MГ2-1500' → 'OKЗнг(A)-FRHF-M8-4MГ2-1500'
+        'ОКСнг(A)-FRHF' + '01-M8-4E1-1500' → 'ОКСнг(A)-FRHF-01-M8-4E1-1500'
+    
+    Args:
+        text: строка с маркой кабеля
+    
+    Returns:
+        str: исправленная строка
+    """
+    # Паттерны для первой части оптического кабеля
+    optical_patterns = [
+        r'OKCнг\(A\)-FRHF[-\d]*',
+        r'OKЗнг\(A\)-FRHF[-\d]*',
+        r'ОКСнг\(A\)-FRHF[-\d]*',
+        r'OKСнг\(A\)-FRHF[-\d]*',  # с латинской С
+        r'ОКЗнг\(A\)-FRHF[-\d]*',  # с русской З
+    ]
+    
+    # Паттерны для второй части (оптические модули)
+    module_patterns = [
+        r'M8-4E1-1500',
+        r'M8-4MГ2-1500',
+        r'M8-4MG2-1500',
+        r'M8-4MГ2-3000',
+        r'M8-4MG2-3000',
+        r'01-M8-4E1-1500',
+        r'01-M8-4MГ2-1500',
+        r'01-M8-4MG2-1500',
+        r'M8-\d+[A-Za-zА-Яа-я]+\d+-\d+',  # общий паттерн для M8-*-*
+    ]
+    
+    # Объединяем все паттерны в один
+    all_patterns = optical_patterns + module_patterns
+    combined = '|'.join(all_patterns)
+    
+    # Ищем все совпадения в тексте
+    matches = re.findall(rf'({combined})', text)
+    
+    if len(matches) >= 2:
+        # Проверяем, что первая часть — оптический кабель, вторая — модуль
+        first = matches[0]
+        second = matches[1]
+        
+        # Проверяем, что первая часть похожа на оптический кабель
+        is_optical = any(re.search(p, first) for p in optical_patterns)
+        # Проверяем, что вторая часть похожа на модуль
+        is_module = any(re.search(p, second) for p in module_patterns)
+        
+        if is_optical and is_module:
+            # Склеиваем две части
+            merged = first + second
+            # Заменяем в тексте
+            text = text.replace(first + ' ' + second, merged)
+            text = text.replace(first + '  ' + second, merged)  # два пробела
+            text = text.replace(first + second, merged)  # без пробела
+    
+    return text
+
+
 def row_parser(input_row, building_bounds):
     """
     Основной парсер строки кабельного журнала.
@@ -598,6 +666,9 @@ def row_parser(input_row, building_bounds):
                     continue
                 # Марка кабеля
                 if not array_row[4]:
+                    # Проверяем, не разорвана ли марка оптического кабеля
+                    line = merge_optical_cable_mark(line)
+                    
                     line_clean = line.replace('/', '').strip().split()[0]
                     if config.regular_cableMark.search(line_clean):
                         array_row[4] = line_clean
