@@ -133,6 +133,9 @@ def copy_merged_sheet_from_old_base(old_path, new_workbook):
     new_sheet = new_workbook.create_sheet("Объединенные кабели", index=1)
     new_sheet.cell(row=1, column=1, value="ККС")  # Заголовок
     new_sheet.column_dimensions['A'].width = 30   # Ширина колонки
+
+    new_sheet.cell(row=1, column=1, value="Журнал")  # Заголовок
+    new_sheet.column_dimensions['B'].width = 50   # Ширина колонки
     
     # Если старая база не существует — возвращаем пустой лист
     if not old_path.exists():
@@ -153,6 +156,7 @@ def copy_merged_sheet_from_old_base(old_path, new_workbook):
         for row in old_sheet.iter_rows(min_row=2, values_only=True):
             if row and row[0]:  # если первый столбец не пустой
                 new_sheet.cell(row=row_idx, column=1, value=row[0])
+                new_sheet.cell(row=row_idx, column=2, value=row[1])
                 row_idx += 1
         
         print(f"   ✅ Скопировано {row_idx - 2} ККС из листа 'Объединенные кабели' старой базы.")
@@ -576,7 +580,7 @@ def build_cable_database(journals_dir, output_dir, progress_callback=None):
         merged_sheet = wb.create_sheet("Объединенные кабели", index=1)  # index=1 означает после первого листа
         merged_sheet.cell(row=1, column=1, value="ККС")
         merged_sheet.column_dimensions['A'].width = 30
-        print("   ℹ️ Создан пустой лист 'Объединенные кабели'.")
+        print("Создан пустой лист 'Объединенные кабели'.")
     # =============================================================  
 
     today = date.today()

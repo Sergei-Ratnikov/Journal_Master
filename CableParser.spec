@@ -2,7 +2,7 @@
 
 
 a = Analysis(
-    ['dxfeditor.py'],
+    ['checker.py'],
     pathex=[],
     binaries=[],
     datas=[],

@@ -130,11 +130,6 @@ class CableParserGUI:
                 font=("Arial", 8), fg="#7f8c8d", bg="#ecf0f1").pack(expand=True)
     
 
-
-    
-
-
-
     # ========== ВКЛАДКА 1: ПАРСЕР БАЗ ==========
     def setup_parser_tab(self):
         """Настройка вкладки 'Парсер баз данных'"""
@@ -410,7 +405,6 @@ class CableParserGUI:
         self.update_status(f"Ошибка: {error_msg}", is_error=True)
         self.progress_detail.config(text=f"Ошибка: {error_msg[:80]}", fg="#e74c3c")
         messagebox.showerror("Ошибка", f"При обработке произошла ошибка:\n\n{error_msg}")
-
     
     # ========== ФУНКЦИИ ДЛЯ ВКЛАДКИ 2 (ПОИСК ОТВЕТНЫХ ЧАСТЕЙ) ==========
     
@@ -433,7 +427,6 @@ class CableParserGUI:
             self.matcher_output_path.set(file_path)
             self.update_status(f"Результат будет сохранён в: {file_path}")
     
-
     def run_matcher(self):
         if self.is_running:
             messagebox.showwarning("Внимание", "Обработка уже выполняется!")
@@ -462,7 +455,6 @@ class CableParserGUI:
         thread = threading.Thread(target=self._process_matcher, args=(journal_list,), daemon=True)
         thread.start()
     
-
     def _process_matcher(self, journal_list):
         start_time = time.time()
         try:
@@ -481,7 +473,6 @@ class CableParserGUI:
         except Exception as e:
             self.root.after(0, self._on_matcher_error, str(e))
 
-
     def _on_matcher_success(self, start_time, output_path):
         duration = time.time() - start_time
         self.is_running = False
@@ -496,7 +487,6 @@ class CableParserGUI:
             f"Результат: {output_path}\n"
             f"Время: {duration:.2f} сек")
     
-
     def _on_matcher_error(self, error_msg):
         self.is_running = False
         self.matcher_run_btn.config(state="normal", bg="#8e44ad")
