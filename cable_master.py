@@ -130,6 +130,7 @@ class CableParserGUI:
                 font=("Arial", 8), fg="#7f8c8d", bg="#ecf0f1").pack(expand=True)
     
 
+
     # ========== ВКЛАДКА 1: ПАРСЕР БАЗ ==========
     def setup_parser_tab(self):
         """Настройка вкладки 'Парсер баз данных'"""

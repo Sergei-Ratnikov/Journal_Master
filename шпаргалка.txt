@@ -25,10 +25,10 @@ pip install pyinstaller
 pyinstaller --onefile --name "CableParser" cable_master.py
 
 Вариант без консольного окна (только графический интерфейс):
-pyinstaller --onefile --noconsole --name "CableParser" cable_master.py
+pyinstaller --onefile --noconsole --name "Journal master" cable_master.py
 
 Полный вариант (с иконкой и без консоли):
-pyinstaller --onefile --noconsole --icon=icon.ico --name "CableParser" cable_master.py
+pyinstaller --onefile --noconsole --windowed --icon=icon.ico --name "Journal Master" cable_master.py
 
 4. Где будет результат
 После выполнения команды:

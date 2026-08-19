@@ -578,7 +578,7 @@ def process_journal(excel_path, journal_kks, output_path):
     # Находим индексы нужных колонок
     kks_col = get_column_index(sheet, 'ККС')
     status_col = get_column_index(sheet, 'Статус объединения')
-    req_col = get_column_index(sheet, 'Требования к объединению')
+    # req_col = get_column_index(sheet, 'Требования к объединению')
     note_col = get_column_index(sheet, 'Примечание')
     
     if kks_col is None:
@@ -625,11 +625,12 @@ def process_journal(excel_path, journal_kks, output_path):
     result_counter = 0
     
     for row_idx, row in cables:
-        # Проверяем условия: статус пуст И требования не пусты
+        # Проверяем условия: статус пуст  (убрано: И требования не пусты)
         status = str(row[status_col - 1]).strip() if status_col and status_col <= len(row) and row[status_col - 1] else ''
-        requirements = str(row[req_col - 1]).strip() if req_col and req_col <= len(row) and row[req_col - 1] else ''
+        # requirements = str(row[req_col - 1]).strip() if req_col and req_col <= len(row) and row[req_col - 1] else ''
         
-        if status or not requirements:
+        # if status or not requirements:
+        if status:
             continue
         
         cable_kks = str(row[kks_col - 1]).strip() if kks_col <= len(row) and row[kks_col - 1] else ''
