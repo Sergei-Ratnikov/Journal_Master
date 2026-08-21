@@ -10,6 +10,7 @@ import re
 import shutil
 from openpyxl import load_workbook, Workbook
 from openpyxl.utils import get_column_letter
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from pathlib import Path
 from datetime import date
 from docx import Document
@@ -571,6 +572,20 @@ def build_cable_database(journals_dir, output_dir, progress_callback=None):
         sheetWrite.column_dimensions[get_column_letter(col)].width = head[2]
     sheetWrite.freeze_panes = 'A2'
 
+    note_col = None   # Номер колонки Примечания
+    for head in heads:
+        if head[1] == 'Примечание':
+            note_col = head[0] + 1  # +1 потому что Excel считает с 1
+            break
+
+    sheetWrite.row_dimensions[1].height = 45     # Высота строки 45
+    # Перенос по словам, выравнивание по центру и по верхнему краю
+    wrap_alignment = Alignment(wrap_text=True, horizontal='center', vertical='top')
+    
+    for col_idx in range(1, len(heads) + 1):
+        cell = sheetWrite.cell(row=1, column=col_idx)
+        cell.alignment = wrap_alignment
+
     # ========== КОПИРОВАНИЕ ЛИСТА 'ОБЪЕДИНЕННЫЕ КАБЕЛИ' ==========
     old_base_path = Path(output_dir) / f"{b_name}{current_version - 1}.xlsx" if current_version > 1 else None
     if old_base_path and old_base_path.exists():
@@ -655,9 +670,7 @@ def build_cable_database(journals_dir, output_dir, progress_callback=None):
                     convert_numbering_to_text(str(journal))
                     j_raw_content = extract_all_text_from_docx(Document(journal))
                     
-                    # =================================
                     # Получение ревизии ТОЛЬКО для Word
-                    # =================================
                     if 'revision_' in j_raw_content[-1]:
                         revision = j_raw_content[-1][-3:]
                         j_raw_content = j_raw_content[:-1]
@@ -713,7 +726,7 @@ def build_cable_database(journals_dir, output_dir, progress_callback=None):
                         if cable_kks:
                             key = (journal_kks, cable_kks)
                             if key in old_notes:
-                                sheetWrite.cell(row=rowWrite, column=35, value=old_notes[key])  # колонка 35 = 'Примечание'
+                                sheetWrite.cell(row=rowWrite, column=note_col, value=old_notes[key])  # колонка 35 = 'Примечание'
                         # ========================================================
 
                         # Расчёт минимальной длины кабеля
@@ -750,11 +763,10 @@ def build_cable_database(journals_dir, output_dir, progress_callback=None):
                             
                             # если фактическая длина меньше минимальной, то
                             if length_val < min_len:
-                                sheetWrite.cell(row=rowWrite, column=32, value='Длина меньше минимальной')
+                                sheetWrite.cell(row=rowWrite, column=32, value='Длина меньше min')
 
                         except Exception:
-                            # Если что-то пошло не так — просто пропускаем
-                            pass
+                            sheetWrite.cell(row=rowWrite, column=31, value=0) # Если что-то пошло не так — записываем 0
                         
                         # Проверка наличия кабельных конструкций здания начала и конца трассы.
                         # Если в трассировке нет конструкций из начала И конца, то это признак необходимости объединения
@@ -772,12 +784,12 @@ def build_cable_database(journals_dir, output_dir, progress_callback=None):
                                 to_building = to_match.group()
                                 
                                 # Если здания одинаковые
-                                if from_building == to_building:
-                                    # Проверяем, есть ли в трассе ККС кабельных конструкций
-                                    tray_matches = regular_cable_tray.findall(check_trace)
-                                    if not tray_matches:
-                                        # Нет ни одной кабельной конструкции — пропускаем проверку, это прокладка по месту
-                                        pass
+                                # if from_building == to_building:
+                                #     # Проверяем, есть ли в трассе ККС кабельных конструкций
+                                #     tray_matches = regular_cable_tray.findall(check_trace)
+                                #     if not tray_matches:
+                                #         # Нет ни одной кабельной конструкции — пропускаем проверку, это прокладка по месту
+                                #         pass
                                     # else:
                                     #     # Есть кабельные конструкции, но не для этого здания?
                                     #     if not check_start_end_trace(check_from_room, check_to_room, check_trace):
@@ -786,14 +798,15 @@ def build_cable_database(journals_dir, output_dir, progress_callback=None):
                                     #             sheetWrite.cell(row=rowWrite, column=32, value=current + '; Да, трасса не полная')
                                     #         else:
                                     #             sheetWrite.cell(row=rowWrite, column=32, value='Да, трасса не полная')
-                                else:
+                                if from_building != to_building:
                                     # Здания разные
                                     if not check_start_end_trace(check_from_room, check_to_room, check_trace):
                                         current = sheetWrite.cell(row=rowWrite, column=32).value or ''
-                                        if current:
-                                            sheetWrite.cell(row=rowWrite, column=32, value=current + '; трасса не полная')
-                                        else:
-                                            sheetWrite.cell(row=rowWrite, column=32, value='трасса не полная')
+                                        separator = '; ' if current else ''
+                                        sheetWrite.cell(row=rowWrite, column=32, value=f"{current}{separator}трасса не полная")
+
+
+
 
                         # Проверка наличия ссылки на кабельный журнал в трассе
                         # Если есть, то в графу 32, 'Ответная часть (из КЖ)' внести ККС журнала, в 31, 'Требования к объединению' - еще комментарий
@@ -807,7 +820,20 @@ def build_cable_database(journals_dir, output_dir, progress_callback=None):
                             current = sheetWrite.cell(row=rowWrite, column=32).value or ''
                             separator = '; ' if current else ''
                             sheetWrite.cell(row=rowWrite, column=32, value=f"{current}{separator}есть ответная часть")
-                            
+
+
+
+
+                        # Проверка на интерфейсную точку
+                        # Если в Raw есть "нтерфейс" или "nterface", дописываем в Требования к объединению
+                        raw_text = str(raw_row)
+                        if 'нтерфейс' in raw_text or 'nterface' in raw_text:
+                            current = sheetWrite.cell(row=rowWrite, column=32).value or ''
+                            if 'интерфейсная точка' not in current:
+                                separator = '; ' if current else ''
+                                sheetWrite.cell(row=rowWrite, column=32, value=f"{current}{separator}интерфейсная точка")
+                        # ========================================================
+                        
                         rowWrite += 1
                         rows_processed += 1
 
@@ -868,66 +894,88 @@ def build_cable_database(journals_dir, output_dir, progress_callback=None):
                 skipped_journals.append((journal.stem, f"Ошибка: {str(e)[:100]}"))
     
 
-
     # ========== ПРОВЕРКА ЖУРНАЛОВ В ОТВЕТНОЙ ЧАСТИ ==========
     # 1. Составляем словарь {полный_ККС: дата_ревизии} из таблицы
     journal_date_map = {}
     for row in range(2, rowWrite):
         journal_kks = sheetWrite.cell(row=row, column=1).value
-        date_val = sheetWrite.cell(row=row, column=25).value  # колонка 25 = 'Дата ревизии'
+        date_val = sheetWrite.cell(row=row, column=25).value
         if journal_kks:
             journal_kks = str(journal_kks).strip()
-            # Если дата есть, используем её, иначе ставим '-'
             date_str = str(date_val).strip() if date_val else '-'
             journal_date_map[journal_kks] = date_str
 
-    print(f"   📋 Найдено уникальных журналов в таблице: {len(journal_date_map)}")
+    # ========== ПОСТРОЕНИЕ ИНДЕКСА КАБЕЛЕЙ (ОДИН РАЗ) ==========
+    # Словарь { (журнал, ККС_кабеля): True } для быстрого поиска
+    cable_index = {}
+    for row in range(2, rowWrite):
+        journal = sheetWrite.cell(row=row, column=1).value
+        kks = sheetWrite.cell(row=row, column=3).value
+        if journal and kks:
+            key = (str(journal).strip(), str(kks).strip())
+            cable_index[key] = True
+    # ============================================================
 
     # 2. Функция поиска ККС в словаре (с поддержкой краткой формы)
-    def find_journal_in_map(kks_to_find, journal_map):
+    def find_all_journals_in_map(kks_to_find, journal_map):
         """
-        Ищет ККС в словаре.
-        Сначала пробует точное совпадение.
-        Если не найдено, ищет, не является ли kks_to_find префиксом (краткой формой) какого-либо ключа.
-        Возвращает: (найденный_полный_ККС, дата) или (None, None)
+        Возвращает список всех журналов, соответствующих ККС.
+        Сначала точное совпадение, затем все, где kks_to_find является префиксом.
         """
+        results = []
+        
         # 1. Точное совпадение
         if kks_to_find in journal_map:
-            return kks_to_find, journal_map[kks_to_find]
+            results.append((kks_to_find, journal_map[kks_to_find]))
+            return results
         
-        # 2. Поиск как краткой формы (kks_to_find является префиксом полного ККС)
+        # 2. Поиск по краткой форме (префиксу) — собираем ВСЕ совпадения
         for full_kks, date_val in journal_map.items():
             if full_kks.startswith(kks_to_find):
-                return full_kks, date_val
+                results.append((full_kks, date_val))
         
-        return None, None
-
+        return results
+    
     # 3. Проверяем каждую строку с ответной частью (столбец 33)
     for row in range(2, rowWrite):
         ref_jrn = sheetWrite.cell(row=row, column=33).value
         if ref_jrn:
             ref_journals = str(ref_jrn).split()
+            
+            cable_kks = sheetWrite.cell(row=row, column=3).value
+            cable_kks = str(cable_kks).strip() if cable_kks else ''
+            
             found_info = []
             all_found = True
+            cable_found_any = False
             
             for r in ref_journals:
-                found_kks, found_date = find_journal_in_map(r, journal_date_map)
-                if found_kks:
-                    found_info.append(f"{found_kks} ({found_date})")
+                found_list = find_all_journals_in_map(r, journal_date_map)
+                
+                if found_list:
+                    for fk, fd in found_list:
+                        found_info.append(f"{fk} ({fd})")
+                    
+                    if cable_kks:
+                        for fk, fd in found_list:
+                            key = (fk, cable_kks)
+                            if key in cable_index:
+                                cable_found_any = True
+                                break
                 else:
                     all_found = False
             
+            # Записываем результат в столбец 34
             if all_found and found_info:
-                # Все журналы найдены
                 result = 'есть в базе: ' + '; '.join(found_info)
                 sheetWrite.cell(row=row, column=34, value=result)
             elif found_info and not all_found:
-                # Часть найдена, часть нет
                 result = 'частично: ' + '; '.join(found_info)
                 sheetWrite.cell(row=row, column=34, value=result)
-            # else:
-                # Ни один не найден
-                # sheetWrite.cell(row=row, column=34, value='нет в базе')
+            
+            # Записываем наличие кабеля в столбец 35
+            if cable_found_any:
+                sheetWrite.cell(row=row, column=35, value='есть')
     # ========== КОНЕЦ БЛОКА ПРОВЕРКИ ==========
 
 
@@ -952,6 +1000,16 @@ def build_cable_database(journals_dir, output_dir, progress_callback=None):
     create_log_sheet(wb, log_data)
     # =========================================
     
+
+    # ========== СКРЫТИЕ СТОЛБЦОВ ==========
+    # Скрываем служебные столбцы, которые не нужны пользователю
+    columns_to_hide = ['G', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T', 'W', 'AA', 'AB', 'AE']  # например, столбцы 30, 31, 32
+    for col_letter in columns_to_hide:
+        try:
+            sheetWrite.column_dimensions[col_letter].hidden = True
+        except:
+            pass
+    # ======================================
 
     # Применяем автофильтр и сохраняем
     sheetWrite.auto_filter.ref = sheetWrite.dimensions

@@ -632,7 +632,7 @@ def process_journal(excel_path, journal_kks, output_path):
         # if status or not requirements:
         if status:
             continue
-        
+
         cable_kks = str(row[kks_col - 1]).strip() if kks_col <= len(row) and row[kks_col - 1] else ''
         if not cable_kks:
             continue
